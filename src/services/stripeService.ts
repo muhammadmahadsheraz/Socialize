@@ -5,8 +5,8 @@ import { AppError } from '../middlewares/errorHandler';
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
 const PRICE_IDS: Record<'monthly' | 'yearly', string> = {
-  monthly: process.env.STRIPE_PRICE_MONTHLY as string,
-  yearly: process.env.STRIPE_PRICE_YEARLY as string,
+  monthly: process.env.STRIPE_PRICE_ID_MONTHLY as string,
+  yearly: process.env.STRIPE_PRICE_ID_YEARLY as string,
 };
 
 export class StripeService {
