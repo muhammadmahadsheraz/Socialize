@@ -9,6 +9,7 @@ declare global {
       user?: {
         id: string;
         isVerified: boolean;
+        isAdmin: boolean;
       };
     }
   }
@@ -37,7 +38,7 @@ export const protect = async (
       return;
     }
 
-    req.user = { id: user._id.toString(), isVerified: user.isVerified };
+    req.user = { id: user._id.toString(), isVerified: user.isVerified, isAdmin: user.isAdmin };
     next();
   } catch (error: any) {
     if (error.name === 'JsonWebTokenError') {

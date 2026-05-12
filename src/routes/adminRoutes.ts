@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { planService } from '../services/planService';
+import { protect } from '../middlewares/auth';
 import { adminMiddleware } from '../middlewares/admin';
 import { validateRequest } from '../middlewares/validation';
 import {
@@ -9,19 +10,19 @@ import {
 
 const router = Router();
 
+// All admin routes require authentication + admin role
+router.use(protect, adminMiddleware);
+
 /**
  * POST /admin/plans
  * Create a new plan
  */
 router.post(
   '/plans',
-  adminMiddleware,
   validateRequest(createPlanSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const planData = req.body;
-      const plan = await planService.createPlan(planData);
-
+      const plan = await planService.createPlan(req.body);
       res.status(201).json({
         success: true,
         message: 'Plan created successfully',
@@ -39,12 +40,10 @@ router.post(
  */
 router.get(
   '/plans',
-  adminMiddleware,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const includeInactive = req.query.includeInactive === 'true';
       const plans = await planService.listPlans(includeInactive);
-
       res.status(200).json({
         success: true,
         message: 'Plans retrieved successfully',
@@ -62,12 +61,9 @@ router.get(
  */
 router.get(
   '/plans/:planId',
-  adminMiddleware,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { planId } = req.params;
-      const plan = await planService.getPlan(planId);
-
+      const plan = await planService.getPlan(req.params.planId);
       res.status(200).json({
         success: true,
         message: 'Plan retrieved successfully',
@@ -81,18 +77,14 @@ router.get(
 
 /**
  * PATCH /admin/plans/:planId
- * Update a plan (metadata only)
+ * Update a plan (non-pricing fields only)
  */
 router.patch(
   '/plans/:planId',
-  adminMiddleware,
   validateRequest(updatePlanSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { planId } = req.params;
-      const updateData = req.body;
-      const plan = await planService.updatePlan(planId, updateData);
-
+      const plan = await planService.updatePlan(req.params.planId, req.body);
       res.status(200).json({
         success: true,
         message: 'Plan updated successfully',
@@ -110,12 +102,9 @@ router.patch(
  */
 router.delete(
   '/plans/:planId',
-  adminMiddleware,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { planId } = req.params;
-      await planService.deletePlan(planId);
-
+      await planService.deletePlan(req.params.planId);
       res.status(200).json({
         success: true,
         message: 'Plan deleted successfully',

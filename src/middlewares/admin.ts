@@ -11,15 +11,12 @@ export const adminMiddleware = (
   next: NextFunction
 ): void => {
   try {
-    // Check if user is authenticated
+    // req.user is set by protect middleware — must run protect before adminMiddleware
     if (!req.user) {
       throw new AppError(401, 'Authentication required');
     }
 
-    // Check if user is admin
-    // Adjust this based on your User model structure
-    const user = req.user as any;
-    if (!user.isAdmin) {
+    if (!req.user.isAdmin) {
       throw new AppError(403, 'Admin access required');
     }
 
