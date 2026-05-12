@@ -32,20 +32,12 @@ router.get('/plans', async (_req: Request, res: Response): Promise<void> => {
  */
 router.post('/checkout', protect, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { planId, billingCycle, successUrl, cancelUrl } = req.body;
+    const { planId, successUrl, cancelUrl } = req.body;
 
     if (!planId || !successUrl || !cancelUrl) {
       res.status(400).json({
         success: false,
         message: 'planId, successUrl, and cancelUrl are required',
-      });
-      return;
-    }
-
-    if (billingCycle && billingCycle !== 'monthly' && billingCycle !== 'yearly') {
-      res.status(400).json({
-        success: false,
-        message: 'billingCycle must be "monthly" or "yearly"',
       });
       return;
     }
@@ -60,23 +52,26 @@ router.post('/checkout', protect, async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Look up the plan and get the correct price ID from the database
-    const { planService } = await import('../services/planService');
-    const priceId = await planService.getPriceId(planId);
-
-    // billingCycle falls back to plan's billingType for metadata
+    // Look up the plan — billingCycle and trialDays come from the plan itself
     const { Plan } = await import('../models/Plan');
     const plan = await Plan.findById(planId);
-    const resolvedBillingCycle = billingCycle || plan?.billingType || 'monthly';
+    if (!plan) {
+      res.status(404).json({ success: false, message: 'Plan not found' });
+      return;
+    }
+
+    const { planService } = await import('../services/planService');
+    const priceId = await planService.getPriceId(planId);
 
     const checkoutUrl = await stripeService.createCheckoutSession(
       userId,
       planId,
       priceId,
-      resolvedBillingCycle,
+      plan.billingType,
       user.email,
       successUrl,
-      cancelUrl
+      cancelUrl,
+      plan.trialDays
     );
 
     res.status(200).json({ success: true, url: checkoutUrl });
@@ -107,10 +102,10 @@ router.post('/portal', protect, async (req: Request, res: Response): Promise<voi
     const { subscriptionService } = await import('../services/subscriptionService');
     const subscription = await subscriptionService.getSubscriptionByUserId(userId);
 
-    if (!subscription || subscription.plan !== 'pro') {
+    if (!subscription || subscription.plan === 'free') {
       res.status(400).json({
         success: false,
-        message: 'No active pro subscription found',
+        message: 'No active paid subscription found',
       });
       return;
     }

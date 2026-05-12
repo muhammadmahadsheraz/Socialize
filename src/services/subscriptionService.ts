@@ -1,4 +1,5 @@
 import { Subscription, ISubscription, IFreeSubscription, IProSubscription } from '../models/Subscription';
+import { Plan } from '../models/Plan';
 import { User } from '../models/User';
 import { AppError } from '../middlewares/errorHandler';
 import { ISubscriptionResponse } from '../interfaces';
@@ -9,17 +10,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
 export class SubscriptionService {
   async createFreeSubscription(userId: string): Promise<IFreeSubscription> {
-    // Verify user exists
     const user = await User.findById(userId);
-    if (!user) {
-      throw new AppError(404, 'User not found');
-    }
+    if (!user) throw new AppError(404, 'User not found');
 
-    // Check if subscription already exists
     const existingSubscription = await Subscription.findOne({ userId });
-    if (existingSubscription) {
-      throw new AppError(400, 'User already has a subscription');
-    }
+    if (existingSubscription) throw new AppError(400, 'User already has a subscription');
 
     const subscription = new Subscription({
       userId: new Types.ObjectId(userId),
@@ -42,21 +37,19 @@ export class SubscriptionService {
       currentPeriodEnd: Date;
     }
   ): Promise<IProSubscription> {
-    // Verify user exists
     const user = await User.findById(userId);
-    if (!user) {
-      throw new AppError(404, 'User not found');
-    }
+    if (!user) throw new AppError(404, 'User not found');
 
-    // Check if subscription already exists
     const existingSubscription = await Subscription.findOne({ userId });
-    if (existingSubscription) {
-      throw new AppError(400, 'User already has a subscription');
-    }
+    if (existingSubscription) throw new AppError(400, 'User already has a subscription');
+
+    // Resolve plan name from Plan document
+    const plan = await Plan.findById(proData.planId);
+    if (!plan) throw new AppError(404, 'Plan not found');
 
     const subscription = new Subscription({
       userId: new Types.ObjectId(userId),
-      plan: 'pro',
+      plan: plan.name,
       status: 'active',
       planId: new Types.ObjectId(proData.planId),
       billingCycle: proData.billingCycle,
@@ -72,9 +65,7 @@ export class SubscriptionService {
 
   async getSubscriptionByUserId(userId: string): Promise<ISubscription | null> {
     const subscription = await Subscription.findOne({ userId });
-    if (!subscription) {
-      throw new AppError(404, 'Subscription not found');
-    }
+    if (!subscription) throw new AppError(404, 'Subscription not found');
     return subscription;
   }
 
@@ -90,15 +81,16 @@ export class SubscriptionService {
     }
   ): Promise<IProSubscription> {
     const subscription = await Subscription.findOne({ userId });
-    if (!subscription) {
-      throw new AppError(404, 'Subscription not found');
+    if (!subscription) throw new AppError(404, 'Subscription not found');
+
+    if (subscription.plan !== 'free') {
+      throw new AppError(400, 'User already has a paid subscription');
     }
 
-    if (subscription.plan === 'pro') {
-      throw new AppError(400, 'User already has a pro subscription');
-    }
+    const plan = await Plan.findById(proData.planId);
+    if (!plan) throw new AppError(404, 'Plan not found');
 
-    (subscription as any).plan = 'pro';
+    (subscription as any).plan = plan.name;
     (subscription as any).status = 'active';
     (subscription as any).planId = new Types.ObjectId(proData.planId);
     (subscription as any).billingCycle = proData.billingCycle;
@@ -111,11 +103,43 @@ export class SubscriptionService {
     return subscription as unknown as IProSubscription;
   }
 
+  async switchProPlan(
+    userId: string,
+    proData: {
+      planId: string;
+      billingCycle: 'monthly' | 'yearly';
+      provider: string;
+      providerSubscriptionId: string;
+      providerCustomerId: string;
+      currentPeriodEnd: Date;
+    }
+  ): Promise<IProSubscription> {
+    const subscription = await Subscription.findOne({ userId });
+    if (!subscription) throw new AppError(404, 'Subscription not found');
+
+    if (subscription.plan === 'free') {
+      throw new AppError(400, 'User is not on a paid subscription');
+    }
+
+    const plan = await Plan.findById(proData.planId);
+    if (!plan) throw new AppError(404, 'Plan not found');
+
+    (subscription as any).plan = plan.name;
+    (subscription as any).planId = new Types.ObjectId(proData.planId);
+    (subscription as any).billingCycle = proData.billingCycle;
+    (subscription as any).provider = proData.provider;
+    (subscription as any).providerSubscriptionId = proData.providerSubscriptionId;
+    (subscription as any).providerCustomerId = proData.providerCustomerId;
+    (subscription as any).currentPeriodEnd = proData.currentPeriodEnd;
+    (subscription as any).status = 'active';
+
+    await subscription.save();
+    return subscription as unknown as IProSubscription;
+  }
+
   async downgradeToFreeSubscription(userId: string): Promise<IFreeSubscription> {
     const subscription = await Subscription.findOne({ userId });
-    if (!subscription) {
-      throw new AppError(404, 'Subscription not found');
-    }
+    if (!subscription) throw new AppError(404, 'Subscription not found');
 
     if (subscription.plan === 'free') {
       throw new AppError(400, 'User already has a free subscription');
@@ -127,7 +151,6 @@ export class SubscriptionService {
       try {
         await stripe.subscriptions.cancel(providerSubscriptionId);
       } catch (err: any) {
-        // If already canceled on Stripe side, continue — don't block the DB update
         if (err?.code !== 'resource_missing') {
           throw new AppError(400, `Failed to cancel Stripe subscription: ${err.message}`);
         }
@@ -152,11 +175,8 @@ export class SubscriptionService {
     status: 'active' | 'past_due' | 'canceled' | 'unpaid' | 'trialing'
   ): Promise<ISubscription> {
     const subscription = await Subscription.findOne({ userId });
-    if (!subscription) {
-      throw new AppError(404, 'Subscription not found');
-    }
+    if (!subscription) throw new AppError(404, 'Subscription not found');
 
-    // Free plans can only have trialing status
     if (subscription.plan === 'free' && status !== 'trialing') {
       throw new AppError(400, 'Free plans can only have trialing status');
     }
@@ -168,9 +188,7 @@ export class SubscriptionService {
 
   async deleteSubscription(userId: string): Promise<void> {
     const result = await Subscription.deleteOne({ userId });
-    if (result.deletedCount === 0) {
-      throw new AppError(404, 'Subscription not found');
-    }
+    if (result.deletedCount === 0) throw new AppError(404, 'Subscription not found');
   }
 
   formatSubscriptionResponse(subscription: ISubscription): ISubscriptionResponse {
@@ -183,14 +201,14 @@ export class SubscriptionService {
       updatedAt: subscription.updatedAt,
     };
 
-    if (subscription.plan === 'pro') {
-      const proSub = subscription as IProSubscription;
-      response.planId = proSub.planId?.toString();
-      response.billingCycle = proSub.billingCycle;
-      response.provider = proSub.provider;
-      response.providerSubscriptionId = proSub.providerSubscriptionId;
-      response.providerCustomerId = proSub.providerCustomerId;
-      response.currentPeriodEnd = proSub.currentPeriodEnd;
+    if (subscription.plan !== 'free') {
+      const paidSub = subscription as IProSubscription;
+      response.planId = paidSub.planId?.toString();
+      response.billingCycle = paidSub.billingCycle;
+      response.provider = paidSub.provider;
+      response.providerSubscriptionId = paidSub.providerSubscriptionId;
+      response.providerCustomerId = paidSub.providerCustomerId;
+      response.currentPeriodEnd = paidSub.currentPeriodEnd;
     }
 
     return response;

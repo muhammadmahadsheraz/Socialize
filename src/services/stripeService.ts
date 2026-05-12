@@ -20,24 +20,31 @@ export class StripeService {
     userId: string,
     planId: string,
     priceId: string,
-    billingCycle: 'monthly' | 'yearly',
+    billingType: string,
     customerEmail: string,
     successUrl: string,
-    cancelUrl: string
+    cancelUrl: string,
+    trialDays: number = 7
   ): Promise<string> {
     if (!priceId) {
       throw new AppError(400, 'Price ID is required');
     }
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: 'subscription',
       payment_method_types: ['card'],
       customer_email: customerEmail,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: successUrl,
       cancel_url: cancelUrl,
-      metadata: { userId, planId, billingCycle },
-    });
+      metadata: { userId, planId, billingType },
+    };
+
+    if (trialDays > 0) {
+      sessionParams.subscription_data = { trial_period_days: trialDays };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     return session.url as string;
   }
@@ -193,9 +200,9 @@ export class StripeService {
   private async handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
     const userId = session.metadata?.userId;
     const planId = session.metadata?.planId;
-    const billingCycle = session.metadata?.billingCycle as 'monthly' | 'yearly';
+    const billingType = session.metadata?.billingType;
 
-    if (!userId || !billingCycle || !planId) return;
+    if (!userId || !planId || !billingType) return;
 
     // Retrieve the full subscription from Stripe
     const stripeSubscription = await stripe.subscriptions.retrieve(
@@ -208,17 +215,22 @@ export class StripeService {
 
     const proData = {
       planId,
-      billingCycle,
+      billingCycle: billingType as 'monthly' | 'yearly',
       provider: 'stripe',
       providerSubscriptionId: stripeSubscription.id,
       providerCustomerId: stripeSubscription.customer as string,
       currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
     };
 
-    if (existingSub && existingSub.plan === 'free') {
-      await subscriptionService.upgradeToProSubscription(userId, proData);
-    } else if (!existingSub) {
+    if (!existingSub) {
+      // No subscription at all — create one
       await subscriptionService.createProSubscription(userId, proData);
+    } else if (existingSub.plan === 'free') {
+      // Coming from free — upgrade
+      await subscriptionService.upgradeToProSubscription(userId, proData);
+    } else {
+      // Already on a paid plan — switching plans
+      await subscriptionService.switchProPlan(userId, proData);
     }
   }
 

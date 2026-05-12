@@ -2,18 +2,35 @@
 
 ## Base URL
 ```
-http://localhost:3000/api
+https://socialize-gamma.vercel.app/api
 ```
+
+---
 
 ## Authentication
-All admin endpoints require a valid JWT token from a user with `isAdmin: true`.
 
+All admin endpoints require a valid JWT token. Admin access is determined entirely by the `ADMIN_EMAIL` environment variable — the account whose email matches `ADMIN_EMAIL` is the super admin. No special flag is stored in the database.
+
+**How to get an admin token:**
+1. Register an account using the email set in `ADMIN_EMAIL`
+2. Login with that account via `POST /api/users/login`
+3. Use the returned token on all admin requests
+
+**Required header on every admin request:**
 ```
 Authorization: Bearer <admin_jwt_token>
+Content-Type: application/json
 ```
 
-If the token is missing or the user is not an admin, you'll get:
+**Error — missing or invalid token (401):**
+```json
+{
+  "success": false,
+  "message": "No token provided"
+}
+```
 
+**Error — authenticated but not the admin account (403):**
 ```json
 {
   "success": false,
@@ -26,48 +43,48 @@ If the token is missing or the user is not an admin, you'll get:
 ## Plan Endpoints
 
 ### 1. Create Plan
-**Endpoint:** `POST /admin/plans`
+**`POST /admin/plans`**
 
-Creates a Stripe Product and Price, then stores the plan in the database.
-
-**Headers:**
-```
-Authorization: Bearer <admin_token>
-Content-Type: application/json
-```
+Creates a Stripe Product and Price, then stores the plan in the database. The `trialDays` field controls how many days users get free before being charged — defaults to 7.
 
 **Request Body:**
 ```json
 {
-  "name": "Pro Monthly",
-  "price": 2999,
-  "billingType": "monthly",
-  "features": [
-    "Unlimited events",
+  "name": "Pro Monthly",                          // REQUIRED — unique plan name
+  "price": 2999,                                  // REQUIRED — price in cents (2999 = $29.99)
+  "billingType": "monthly",                       // REQUIRED — "monthly" | "yearly" | "weekly" | "daily"
+  "features": [                                   // REQUIRED — min 1 item
+    "Up to 100 events per month",
     "Advanced analytics",
     "Custom branding",
+    "Priority support",
     "API access"
   ],
-  "maxEvents": 100,
-  "badge": "Most Popular",
-  "prioritySupport": true,
-  "status": true,
-  "isPopular": true
+  "maxEvents": 100,                               // REQUIRED — max events allowed on this plan
+  "prioritySupport": true,                        // REQUIRED — boolean
+  "status": true,                                 // REQUIRED — true = active, false = inactive
+  "isPopular": true,                              // REQUIRED — shows "popular" badge on pricing page
+  "badge": "Most Popular",                        // OPTIONAL — custom badge label, null if none
+  "trialDays": 7,                                 // OPTIONAL — free trial days before charging (default: 7, 0 = no trial)
+  "currency": "usd"                               // OPTIONAL — currency code (default: "usd")
 }
 ```
+
+**Field Reference:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | name | string | Yes | Unique plan name |
-| price | number | Yes | Price in cents (e.g. 2999 = $29.99) |
+| price | number | Yes | Price in cents — e.g. `2999` = $29.99 |
 | billingType | string | Yes | `"monthly"`, `"yearly"`, `"weekly"`, or `"daily"` |
-| features | array | Yes | Array of feature strings (min 1 feature) |
-| maxEvents | number | Yes | Maximum events allowed on this plan |
-| badge | string | No | Optional badge label (e.g. "Most Popular", "Best Value") |
-| prioritySupport | boolean | Yes | Whether priority support is enabled |
-| status | boolean | Yes | `true` = active, `false` = inactive |
-| isPopular | boolean | Yes | Mark as popular on pricing page |
-| currency | string | No | Currency code, default `"usd"` |
+| features | string[] | Yes | Array of feature strings, minimum 1 |
+| maxEvents | number | Yes | Max events allowed on this plan (0 = unlimited) |
+| prioritySupport | boolean | Yes | Whether priority support is included |
+| status | boolean | Yes | `true` = active and visible, `false` = hidden |
+| isPopular | boolean | Yes | Marks plan as popular on the pricing page |
+| badge | string | No | Custom badge label e.g. `"Most Popular"`, `"Best Value"`. Omit or set `null` for no badge |
+| trialDays | number | No | Free trial days before first charge. Default: `7`. Set to `0` for no trial |
+| currency | string | No | ISO currency code. Default: `"usd"` |
 
 **Response (201 Created):**
 ```json
@@ -80,9 +97,10 @@ Content-Type: application/json
     "price": 2999,
     "billingType": "monthly",
     "features": [
-      "Unlimited events",
+      "Up to 100 events per month",
       "Advanced analytics",
       "Custom branding",
+      "Priority support",
       "API access"
     ],
     "maxEvents": 100,
@@ -90,16 +108,17 @@ Content-Type: application/json
     "prioritySupport": true,
     "status": true,
     "isPopular": true,
+    "trialDays": 7,
     "currency": "USD",
-    "stripeProductId": "prod_ABC123",
-    "stripePriceId": "price_XYZ456",
-    "createdAt": "2026-05-11T10:30:00Z",
-    "updatedAt": "2026-05-11T10:30:00Z"
+    "stripeProductId": "prod_ABC123xyz",
+    "stripePriceId": "price_XYZ456abc",
+    "createdAt": "2026-05-13T10:30:00.000Z",
+    "updatedAt": "2026-05-13T10:30:00.000Z"
   }
 }
 ```
 
-**Error — Plan name already exists (400):**
+**Error — plan name already exists (400):**
 ```json
 {
   "success": false,
@@ -111,29 +130,38 @@ Content-Type: application/json
 ```json
 {
   "success": false,
-  "message": "Failed to create plan in Stripe: <stripe error>"
+  "message": "Failed to create plan in Stripe: <stripe error message>"
+}
+```
+
+**Error — validation failure (400):**
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "errors": [
+    {
+      "field": "price",
+      "message": "Price is required"
+    }
+  ]
 }
 ```
 
 ---
 
 ### 2. List All Plans
-**Endpoint:** `GET /admin/plans`
+**`GET /admin/plans`**
 
-Returns all plans. By default only active plans are returned.
-
-**Headers:**
-```
-Authorization: Bearer <admin_token>
-```
+Returns all plans. By default only active plans (`status: true`) are returned. Pass `includeInactive=true` to see all.
 
 **Query Parameters:**
 
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| includeInactive | boolean | No | Pass `true` to include inactive/deleted plans |
+| includeInactive | boolean | No | Pass `true` to include inactive plans. Default: `false` |
 
-**Example:**
+**Examples:**
 ```
 GET /admin/plans
 GET /admin/plans?includeInactive=true
@@ -150,34 +178,49 @@ GET /admin/plans?includeInactive=true
       "name": "Pro Monthly",
       "price": 2999,
       "billingType": "monthly",
-      "features": ["Unlimited events", "Advanced analytics", "Custom branding"],
+      "features": [
+        "Up to 100 events per month",
+        "Advanced analytics",
+        "Custom branding",
+        "Priority support",
+        "API access"
+      ],
       "maxEvents": 100,
       "badge": "Most Popular",
       "prioritySupport": true,
       "status": true,
       "isPopular": true,
+      "trialDays": 7,
       "currency": "USD",
-      "stripeProductId": "prod_ABC123",
-      "stripePriceId": "price_XYZ456",
-      "createdAt": "2026-05-11T10:30:00Z",
-      "updatedAt": "2026-05-11T10:30:00Z"
+      "stripeProductId": "prod_ABC123xyz",
+      "stripePriceId": "price_XYZ456abc",
+      "createdAt": "2026-05-13T10:30:00.000Z",
+      "updatedAt": "2026-05-13T10:30:00.000Z"
     },
     {
       "id": "507f1f77bcf86cd799439012",
       "name": "Pro Yearly",
       "price": 29999,
       "billingType": "yearly",
-      "features": ["Unlimited events", "Advanced analytics", "Custom branding", "Priority support"],
+      "features": [
+        "Up to 500 events per year",
+        "Advanced analytics",
+        "Custom branding",
+        "Priority support",
+        "API access",
+        "Dedicated account manager"
+      ],
       "maxEvents": 500,
       "badge": "Best Value",
       "prioritySupport": true,
       "status": true,
       "isPopular": false,
+      "trialDays": 7,
       "currency": "USD",
-      "stripeProductId": "prod_DEF789",
-      "stripePriceId": "price_GHI012",
-      "createdAt": "2026-05-11T10:35:00Z",
-      "updatedAt": "2026-05-11T10:35:00Z"
+      "stripeProductId": "prod_DEF789ghi",
+      "stripePriceId": "price_GHI012jkl",
+      "createdAt": "2026-05-13T10:35:00.000Z",
+      "updatedAt": "2026-05-13T10:35:00.000Z"
     }
   ]
 }
@@ -186,12 +229,13 @@ GET /admin/plans?includeInactive=true
 ---
 
 ### 3. Get Plan by ID
-**Endpoint:** `GET /admin/plans/:planId`
+**`GET /admin/plans/:planId`**
 
-**Headers:**
-```
-Authorization: Bearer <admin_token>
-```
+**URL Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| planId | string | Yes | MongoDB ObjectId of the plan |
 
 **Response (200 OK):**
 ```json
@@ -203,22 +247,29 @@ Authorization: Bearer <admin_token>
     "name": "Pro Monthly",
     "price": 2999,
     "billingType": "monthly",
-    "features": ["Unlimited events", "Advanced analytics", "Custom branding"],
+    "features": [
+      "Up to 100 events per month",
+      "Advanced analytics",
+      "Custom branding",
+      "Priority support",
+      "API access"
+    ],
     "maxEvents": 100,
     "badge": "Most Popular",
     "prioritySupport": true,
     "status": true,
     "isPopular": true,
+    "trialDays": 7,
     "currency": "USD",
-    "stripeProductId": "prod_ABC123",
-    "stripePriceId": "price_XYZ456",
-    "createdAt": "2026-05-11T10:30:00Z",
-    "updatedAt": "2026-05-11T10:30:00Z"
+    "stripeProductId": "prod_ABC123xyz",
+    "stripePriceId": "price_XYZ456abc",
+    "createdAt": "2026-05-13T10:30:00.000Z",
+    "updatedAt": "2026-05-13T10:30:00.000Z"
   }
 }
 ```
 
-**Error — Not found (404):**
+**Error — not found (404):**
 ```json
 {
   "success": false,
@@ -229,36 +280,47 @@ Authorization: Bearer <admin_token>
 ---
 
 ### 4. Update Plan
-**Endpoint:** `PATCH /admin/plans/:planId`
+**`PATCH /admin/plans/:planId`**
 
-Updates plan metadata only. Pricing fields (amount, interval, currency) cannot be changed after creation — create a new plan instead.
+Updates plan metadata. Pricing fields (`price`, `billingType`, `currency`) are immutable after creation — create a new plan if pricing needs to change.
 
-**Headers:**
-```
-Authorization: Bearer <admin_token>
-Content-Type: application/json
-```
+**URL Parameters:**
 
-**Request Body:**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| planId | string | Yes | MongoDB ObjectId of the plan |
+
+**Request Body (all fields optional — send only what you want to change):**
 ```json
 {
-  "features": ["Unlimited events", "Advanced analytics", "Priority support"],
-  "maxEvents": 200,
-  "badge": "Best Value",
-  "prioritySupport": true,
-  "status": false,
-  "isPopular": false
+  "features": [                                   // OPTIONAL — replaces entire features array
+    "Up to 200 events per month",
+    "Advanced analytics",
+    "Custom branding",
+    "Priority support",
+    "API access",
+    "White-label option"
+  ],
+  "maxEvents": 200,                               // OPTIONAL — updated max events
+  "badge": "Best Value",                          // OPTIONAL — updated badge, null to remove
+  "prioritySupport": true,                        // OPTIONAL — updated priority support flag
+  "status": false,                                // OPTIONAL — true = active, false = inactive
+  "isPopular": false,                             // OPTIONAL — updated popular flag
+  "trialDays": 14                                 // OPTIONAL — updated trial days
 }
 ```
 
+**Field Reference:**
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| features | array | No | Updated features list |
-| maxEvents | number | No | Updated max events |
-| badge | string | No | Updated badge label |
+| features | string[] | No | Replaces the full features list, minimum 1 item |
+| maxEvents | number | No | Updated max events, must be >= 0 |
+| badge | string | No | Updated badge label, `null` to remove badge |
 | prioritySupport | boolean | No | Updated priority support flag |
 | status | boolean | No | `true` = active, `false` = inactive |
 | isPopular | boolean | No | Updated popular flag |
+| trialDays | number | No | Updated trial days, must be >= 0 |
 
 **Response (200 OK):**
 ```json
@@ -270,50 +332,30 @@ Content-Type: application/json
     "name": "Pro Monthly",
     "price": 2999,
     "billingType": "monthly",
-    "features": ["Unlimited events", "Advanced analytics", "Priority support"],
+    "features": [
+      "Up to 200 events per month",
+      "Advanced analytics",
+      "Custom branding",
+      "Priority support",
+      "API access",
+      "White-label option"
+    ],
     "maxEvents": 200,
     "badge": "Best Value",
     "prioritySupport": true,
     "status": false,
     "isPopular": false,
+    "trialDays": 14,
     "currency": "USD",
-    "stripeProductId": "prod_ABC123",
-    "stripePriceId": "price_XYZ456",
-    "createdAt": "2026-05-11T10:30:00Z",
-    "updatedAt": "2026-05-11T11:00:00Z"
+    "stripeProductId": "prod_ABC123xyz",
+    "stripePriceId": "price_XYZ456abc",
+    "createdAt": "2026-05-13T10:30:00.000Z",
+    "updatedAt": "2026-05-13T11:00:00.000Z"
   }
 }
 ```
 
----
-
-### 5. Delete Plan
-**Endpoint:** `DELETE /admin/plans/:planId`
-
-Deletes the plan from the database and archives the Stripe Product and Prices. Cannot delete a plan that has active subscriptions.
-
-**Headers:**
-```
-Authorization: Bearer <admin_token>
-```
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "message": "Plan deleted successfully"
-}
-```
-
-**Error — Active subscriptions exist (400):**
-```json
-{
-  "success": false,
-  "message": "Cannot delete plan with active subscriptions. Please cancel all subscriptions first."
-}
-```
-
-**Error — Not found (404):**
+**Error — not found (404):**
 ```json
 {
   "success": false,
@@ -323,14 +365,59 @@ Authorization: Bearer <admin_token>
 
 ---
 
-## Stripe Checkout Endpoints (Updated)
+### 5. Delete Plan
+**`DELETE /admin/plans/:planId`**
 
-These are user-facing endpoints but updated to use dynamic plan IDs.
+Deletes the plan from the database and archives its Stripe Product and Prices. Will fail if any active subscriptions are linked to this plan — cancel those subscriptions first.
+
+> **Note:** Stripe does not allow permanent deletion of prices, only archiving. The Stripe product is deleted but prices are archived.
+
+**URL Parameters:**
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| planId | string | Yes | MongoDB ObjectId of the plan |
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Plan deleted successfully"
+}
+```
+
+**Error — active subscriptions exist (400):**
+```json
+{
+  "success": false,
+  "message": "Cannot delete plan with active subscriptions. Please cancel all subscriptions first."
+}
+```
+
+**Error — not found (404):**
+```json
+{
+  "success": false,
+  "message": "Plan not found"
+}
+```
+
+**Error — Stripe failure (400):**
+```json
+{
+  "success": false,
+  "message": "Failed to delete plan from Stripe: <stripe error message>"
+}
+```
+
+---
+
+## Stripe Endpoints (Admin-relevant)
 
 ### Get Available Plans (Public)
-**Endpoint:** `GET /stripe/plans`
+**`GET /stripe/plans`**
 
-No authentication required. Returns all active plans for display on the frontend pricing page.
+No authentication required. Returns all active plans. This is what the frontend pricing page calls.
 
 **Response (200 OK):**
 ```json
@@ -342,17 +429,24 @@ No authentication required. Returns all active plans for display on the frontend
       "name": "Pro Monthly",
       "price": 2999,
       "billingType": "monthly",
-      "features": ["Unlimited events", "Advanced analytics", "Custom branding"],
+      "features": [
+        "Up to 100 events per month",
+        "Advanced analytics",
+        "Custom branding",
+        "Priority support",
+        "API access"
+      ],
       "maxEvents": 100,
       "badge": "Most Popular",
       "prioritySupport": true,
       "status": true,
       "isPopular": true,
+      "trialDays": 7,
       "currency": "USD",
-      "stripeProductId": "prod_ABC123",
-      "stripePriceId": "price_XYZ456",
-      "createdAt": "2026-05-11T10:30:00Z",
-      "updatedAt": "2026-05-11T10:30:00Z"
+      "stripeProductId": "prod_ABC123xyz",
+      "stripePriceId": "price_XYZ456abc",
+      "createdAt": "2026-05-13T10:30:00.000Z",
+      "updatedAt": "2026-05-13T10:30:00.000Z"
     }
   ]
 }
@@ -360,75 +454,37 @@ No authentication required. Returns all active plans for display on the frontend
 
 ---
 
-### Create Checkout Session (Updated)
-**Endpoint:** `POST /stripe/checkout`
+## Full Admin Flow
 
-**Headers:**
+### Initial Setup
 ```
-Authorization: Bearer <user_token>
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "planId": "507f1f77bcf86cd799439011",
-  "successUrl": "https://yourapp.com/success",
-  "cancelUrl": "https://yourapp.com/cancel"
-}
+1. Set ADMIN_EMAIL=your@email.com in environment variables (Vercel + local .env)
+2. Register an account with that exact email via POST /api/users/register
+3. Login via POST /api/users/login → get JWT token
+4. Use that token on all /admin/* requests
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| planId | string | Yes | MongoDB ID of the plan from `GET /stripe/plans` |
-| successUrl | string | Yes | URL to redirect after successful payment |
-| cancelUrl | string | Yes | URL to redirect if user cancels |
-
-> `billingCycle` is no longer needed — each plan already has its `billingType` baked in.
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "url": "https://checkout.stripe.com/pay/cs_test_..."
-}
+### Creating Plans
+```
+1. POST /admin/plans → creates plan in Stripe + database
+2. Repeat for each plan tier (e.g. monthly, yearly)
+3. GET /stripe/plans → verify plans appear on public endpoint
 ```
 
-**Error — Plan has no price for billing cycle (400):**
-```json
-{
-  "success": false,
-  "message": "Plan does not have a price for monthly billing cycle"
-}
+### Deleting a Plan
 ```
-
----
-
-## Full Flow
-
-### Admin Setup Flow
-```
-1. Admin logs in → gets JWT token with isAdmin: true
-2. POST /admin/plans → creates plan in Stripe + database
-3. Repeat for each plan (e.g. monthly, yearly)
-```
-
-### User Subscription Flow
-```
-1. User visits pricing page
-2. GET /stripe/plans → frontend displays available plans
-3. User clicks subscribe → frontend sends planId + billingCycle
-4. POST /stripe/checkout → backend looks up Price ID from database → returns Stripe checkout URL
-5. User completes payment on Stripe
-6. Stripe sends webhook → POST /stripe/webhook
-7. Backend updates user subscription to pro
+1. Ensure no active subscriptions reference the plan
+   (check via GET /admin/plans/:planId and cross-reference subscriptions)
+2. DELETE /admin/plans/:planId
+   → archives Stripe prices, deletes Stripe product, removes from DB
 ```
 
 ---
 
 ## Notes
 
-- **Amount is in cents** — $29.99 = `2999`
-- **Pricing is immutable** — once a plan is created, amount/interval cannot be changed. Create a new plan instead.
-- **Stripe archiving** — Stripe does not allow deleting prices, only archiving them. Deleting a plan archives its Stripe prices and deletes the product.
-- **isActive flag** — Setting `isActive: false` hides the plan from `GET /stripe/plans` without deleting it from Stripe.
+- **Price is in cents** — $29.99 = `2999`
+- **Pricing is immutable** — `price`, `billingType`, and `currency` cannot be changed after creation. Create a new plan instead.
+- **Trial days** — `trialDays: 7` means Stripe collects card info at checkout but does not charge until 7 days later. If the user cancels within the trial, no charge is made.
+- **Admin identity** — Admin access is based solely on `ADMIN_EMAIL` in the environment. No database flag is used. Changing `ADMIN_EMAIL` immediately changes who has admin access.
+- **Inactive plans** — Setting `status: false` hides the plan from `GET /stripe/plans` without deleting it from Stripe or the database.

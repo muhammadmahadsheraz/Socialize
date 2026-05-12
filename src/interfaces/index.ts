@@ -20,7 +20,7 @@ export interface ISubscriptionResponse {
   id: string;
   userId: string;
   planId?: string;
-  plan: 'free' | 'pro';
+  plan: string;              // 'free' or the plan name e.g. 'Pro Monthly'
   status: string;
   billingCycle?: 'monthly' | 'yearly';
   provider?: string;

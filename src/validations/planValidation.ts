@@ -44,6 +44,7 @@ export const createPlanSchema = Joi.object({
 
   // Optional internal field
   currency: Joi.string().optional().default('usd').uppercase(),
+  trialDays: Joi.number().integer().min(0).optional().default(7),
 });
 
 export const updatePlanSchema = Joi.object({
@@ -53,4 +54,5 @@ export const updatePlanSchema = Joi.object({
   prioritySupport: Joi.boolean().optional(),
   status: Joi.boolean().optional(),
   isPopular: Joi.boolean().optional(),
+  trialDays: Joi.number().integer().min(0).optional(),
 });

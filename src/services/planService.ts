@@ -18,6 +18,7 @@ export class PlanService {
     prioritySupport: boolean;
     status: boolean;
     isPopular: boolean;
+    trialDays?: number;
     currency?: string;
   }): Promise<IPlan> {
     // Check if plan with this name already exists
@@ -49,6 +50,7 @@ export class PlanService {
       prioritySupport: planData.prioritySupport,
       status: planData.status,
       isPopular: planData.isPopular,
+      trialDays: planData.trialDays ?? 7,
       currency: planData.currency || 'usd',
       stripeProductId: productId,
       stripePriceId: priceId,
@@ -130,6 +132,7 @@ export class PlanService {
       prioritySupport?: boolean;
       status?: boolean;
       isPopular?: boolean;
+      trialDays?: number;
     }
   ): Promise<IPlan> {
     const plan = await Plan.findByIdAndUpdate(planId, updateData, {
@@ -172,6 +175,7 @@ export class PlanService {
       prioritySupport: plan.prioritySupport,
       status: plan.status,
       isPopular: plan.isPopular,
+      trialDays: plan.trialDays,
       currency: plan.currency,
       stripeProductId: plan.stripeProductId,
       stripePriceId: plan.stripePriceId,

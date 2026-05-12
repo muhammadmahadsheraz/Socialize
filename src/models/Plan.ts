@@ -12,18 +12,18 @@ export const BILLING_TYPE_MAP: Record<BillingType, { interval: 'day' | 'week' | 
 };
 
 export interface IPlan extends Document {
-  // UI fields — named exactly as the frontend uses them
   name: string;
-  price: number;              // in cents (e.g. 2999 = $29.99)
-  billingType: BillingType;   // 'monthly' | 'yearly' | 'weekly' | 'daily'
-  features: string[];         // array of feature strings
-  maxEvents: number;          // max events allowed on this plan
-  badge?: string;             // optional badge label e.g. "Most Popular"
-  prioritySupport: boolean;   // priority support enabled
-  status: boolean;            // true = active, false = inactive
-  isPopular: boolean;         // mark as popular on pricing page
+  price: number;
+  billingType: BillingType;
+  features: string[];
+  maxEvents: number;
+  badge?: string;
+  prioritySupport: boolean;
+  status: boolean;
+  isPopular: boolean;
+  trialDays: number;        // 0 = no trial, 7 = 7-day free trial, etc.
 
-  // Internal Stripe fields — not exposed to UI
+  // Internal Stripe fields
   currency: string;
   stripeProductId: string;
   stripePriceId: string;
@@ -82,6 +82,11 @@ const planSchema = new Schema<IPlan>(
       type: Boolean,
       required: [true, 'isPopular is required'],
       default: false,
+    },
+    trialDays: {
+      type: Number,
+      default: 0,
+      min: [0, 'Trial days must be non-negative'],
     },
     currency: {
       type: String,

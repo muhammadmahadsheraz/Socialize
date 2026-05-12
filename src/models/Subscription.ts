@@ -3,8 +3,8 @@ import { Schema, model, Document, Types } from 'mongoose';
 // Base subscription interface
 export interface ISubscriptionBase extends Document {
   userId: Types.ObjectId;
-  planId?: Types.ObjectId;   // reference to Plan document
-  plan: 'free' | 'pro';
+  planId?: Types.ObjectId;   // reference to Plan document — undefined for free
+  plan: string;              // 'free' or the plan name e.g. 'Pro Monthly'
   status: 'active' | 'past_due' | 'canceled' | 'unpaid' | 'trialing';
   billingCycle?: 'monthly' | 'yearly';
   provider?: string;
@@ -22,12 +22,12 @@ export interface IFreeSubscription extends ISubscriptionBase {
   planId: undefined;
 }
 
-// Pro plan subscription
+// Paid plan subscription (any named plan)
 export interface IProSubscription extends ISubscriptionBase {
-  plan: 'pro';
+  plan: string;              // plan name e.g. 'Pro Monthly', 'Pro Yearly'
   planId: Types.ObjectId;
   billingCycle: 'monthly' | 'yearly';
-  status: 'active' | 'past_due' | 'canceled' | 'unpaid';
+  status: 'active' | 'past_due' | 'canceled' | 'unpaid' | 'trialing';
   provider: string;
   providerSubscriptionId: string;
   providerCustomerId: string;
@@ -50,17 +50,14 @@ const subscriptionSchema = new Schema<any>(
       ref: 'Plan',
       default: null,
       required: function (this: any) {
-        return this.plan === 'pro';
+        return this.plan !== 'free';
       },
       sparse: true,
     },
     plan: {
       type: String,
-      enum: {
-        values: ['free', 'pro'],
-        message: 'Plan must be either "free" or "pro"',
-      },
       required: [true, 'Plan is required'],
+      trim: true,
     },
     billingCycle: {
       type: String,
@@ -69,7 +66,7 @@ const subscriptionSchema = new Schema<any>(
         message: 'Billing cycle must be either "monthly" or "yearly"',
       },
       required: function (this: any) {
-        return this.plan === 'pro';
+        return this.plan !== 'free';
       },
       sparse: true,
     },
@@ -77,36 +74,35 @@ const subscriptionSchema = new Schema<any>(
       type: String,
       enum: {
         values: ['active', 'past_due', 'canceled', 'unpaid', 'trialing'],
-        message:
-          'Status must be one of: active, past_due, canceled, unpaid, trialing',
+        message: 'Status must be one of: active, past_due, canceled, unpaid, trialing',
       },
       required: [true, 'Status is required'],
     },
     provider: {
       type: String,
       required: function (this: any) {
-        return this.plan === 'pro';
+        return this.plan !== 'free';
       },
       sparse: true,
     },
     providerSubscriptionId: {
       type: String,
       required: function (this: any) {
-        return this.plan === 'pro';
+        return this.plan !== 'free';
       },
       sparse: true,
     },
     providerCustomerId: {
       type: String,
       required: function (this: any) {
-        return this.plan === 'pro';
+        return this.plan !== 'free';
       },
       sparse: true,
     },
     currentPeriodEnd: {
       type: Date,
       required: function (this: any) {
-        return this.plan === 'pro';
+        return this.plan !== 'free';
       },
       sparse: true,
     },
@@ -116,44 +112,35 @@ const subscriptionSchema = new Schema<any>(
   }
 );
 
-// Middleware to validate free plan constraints
+// Middleware to enforce free plan constraints
 subscriptionSchema.pre('save', function (next) {
   const doc = this as ISubscriptionBase;
-  
+
   if (doc.plan === 'free') {
-    // Ensure free plan has trialing status
     doc.status = 'trialing';
-    // Clear pro-only fields
     doc.planId = undefined;
     doc.billingCycle = undefined;
     doc.provider = undefined;
     doc.providerSubscriptionId = undefined;
     doc.providerCustomerId = undefined;
     doc.currentPeriodEnd = undefined;
-  }
-
-  if (doc.plan === 'pro') {
-    // Ensure pro plan has required fields
+  } else {
+    // Paid plan — require key fields
     if (!doc.billingCycle || !doc.provider) {
-      return next(
-        new Error('Pro plan requires billingCycle and provider fields')
-      );
+      return next(new Error('Paid plans require billingCycle and provider fields'));
     }
     if (!doc.planId) {
-      return next(new Error('Pro plan requires a planId reference'));
+      return next(new Error('Paid plans require a planId reference'));
     }
   }
 
   next();
 });
 
-// Index for common queries
+// Indexes
 subscriptionSchema.index({ userId: 1 });
 subscriptionSchema.index({ planId: 1 });
 subscriptionSchema.index({ plan: 1 });
 subscriptionSchema.index({ status: 1 });
 
-export const Subscription = model<ISubscription>(
-  'Subscription',
-  subscriptionSchema
-);
+export const Subscription = model<ISubscription>('Subscription', subscriptionSchema);
