@@ -47,6 +47,7 @@ export const updateUserSchema = Joi.object({
   profilePic: Joi.string().uri().optional(),
   age: Joi.number().min(13).max(150).optional(),
   favouritePlaces: Joi.array().items(Joi.string()).optional(),
+  isAdmin: Joi.boolean().optional(),
 });
 
 export const loginSchema = Joi.object({
