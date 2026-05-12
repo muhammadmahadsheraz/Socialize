@@ -9,6 +9,7 @@ export interface IUser extends Document {
   profilePic?: string;
   age?: number;
   isVerified: boolean;
+  isAdmin: boolean;
   favouritePlaces?: string[];
   createdAt: Date;
   updatedAt: Date;
@@ -56,6 +57,10 @@ const userSchema = new Schema<IUser>(
       default: null,
     },
     isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    isAdmin: {
       type: Boolean,
       default: false,
     },

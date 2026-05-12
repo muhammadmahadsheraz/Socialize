@@ -4,11 +4,6 @@ import { AppError } from '../middlewares/errorHandler';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
-const PRICE_IDS: Record<'monthly' | 'yearly', string> = {
-  monthly: process.env.STRIPE_PRICE_ID_MONTHLY as string,
-  yearly: process.env.STRIPE_PRICE_ID_YEARLY as string,
-};
-
 export class StripeService {
   /**
    * Create a Stripe customer for a user
@@ -23,15 +18,15 @@ export class StripeService {
    */
   async createCheckoutSession(
     userId: string,
+    planId: string,
+    priceId: string,
     billingCycle: 'monthly' | 'yearly',
     customerEmail: string,
     successUrl: string,
     cancelUrl: string
   ): Promise<string> {
-    const priceId = PRICE_IDS[billingCycle];
-
     if (!priceId) {
-      throw new AppError(400, 'Invalid billing cycle');
+      throw new AppError(400, 'Price ID is required');
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -41,7 +36,7 @@ export class StripeService {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: successUrl,
       cancel_url: cancelUrl,
-      metadata: { userId, billingCycle },
+      metadata: { userId, planId, billingCycle },
     });
 
     return session.url as string;
@@ -60,6 +55,93 @@ export class StripeService {
     });
 
     return session.url;
+  }
+
+  /**
+   * Create a Stripe Product and Price for a plan
+   */
+  async createPlanInStripe(planData: {
+    name: string;
+    description?: string;
+    amount: number;
+    currency: string;
+    interval: 'day' | 'week' | 'month' | 'year';
+    intervalCount: number;
+  }): Promise<{ productId: string; priceId: string }> {
+    try {
+      // Create the product
+      const product = await stripe.products.create({
+        name: planData.name,
+        description: planData.description,
+        metadata: {
+          interval: planData.interval,
+          intervalCount: planData.intervalCount.toString(),
+        },
+      });
+
+      // Create the price for the product
+      const price = await stripe.prices.create({
+        product: product.id,
+        unit_amount: planData.amount,
+        currency: planData.currency,
+        recurring: {
+          interval: planData.interval,
+          interval_count: planData.intervalCount,
+        },
+      });
+
+      return {
+        productId: product.id,
+        priceId: price.id,
+      };
+    } catch (error) {
+      throw new AppError(400, `Failed to create plan in Stripe: ${error}`);
+    }
+  }
+
+  /**
+   * Delete a Stripe Product and its Prices
+   */
+  async deletePlanFromStripe(productId: string): Promise<void> {
+    try {
+      // First, get all prices for this product
+      const prices = await stripe.prices.list({
+        product: productId,
+      });
+
+      // Archive all prices (Stripe doesn't allow deletion of prices, only archiving)
+      for (const price of prices.data) {
+        await stripe.prices.update(price.id, { active: false });
+      }
+
+      // Delete the product
+      await stripe.products.del(productId);
+    } catch (error) {
+      throw new AppError(400, `Failed to delete plan from Stripe: ${error}`);
+    }
+  }
+
+  /**
+   * Get a Stripe Product
+   */
+  async getStripeProduct(productId: string): Promise<Stripe.Product> {
+    try {
+      return await stripe.products.retrieve(productId);
+    } catch (error) {
+      throw new AppError(404, `Product not found in Stripe: ${error}`);
+    }
+  }
+
+  /**
+   * List all Stripe Products
+   */
+  async listStripeProducts(): Promise<Stripe.Product[]> {
+    try {
+      const products = await stripe.products.list({ limit: 100 });
+      return products.data;
+    } catch (error) {
+      throw new AppError(400, `Failed to list products from Stripe: ${error}`);
+    }
   }
 
   /**

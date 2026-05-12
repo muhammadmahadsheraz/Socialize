@@ -7,6 +7,7 @@ import subscriptionRoutes from './routes/subscriptionRoutes';
 import eventRoutes from './routes/eventRoutes';
 import venueRoutes from './routes/venueRoutes';
 import stripeRoutes from './routes/stripeRoutes';
+import adminRoutes from './routes/adminRoutes';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/stripe', stripeRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 handler
 app.use((_req: Request, _res: Response) => {

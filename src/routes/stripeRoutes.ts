@@ -1,8 +1,29 @@
 import { Router, Request, Response } from 'express';
 import { stripeService } from '../services/stripeService';
 import { protect } from '../middlewares/auth';
+import { planService } from '../services/planService';
 
 const router = Router();
+
+/**
+ * GET /api/stripe/plans
+ * List all active plans — public, no auth required
+ * Frontend uses this to show available plans to users
+ */
+router.get('/plans', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const plans = await planService.listPlans();
+    res.status(200).json({
+      success: true,
+      data: plans.map((plan) => planService.formatPlanResponse(plan)),
+    });
+  } catch (error: any) {
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to fetch plans',
+    });
+  }
+});
 
 /**
  * POST /api/stripe/checkout
@@ -11,17 +32,17 @@ const router = Router();
  */
 router.post('/checkout', protect, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { billingCycle, successUrl, cancelUrl } = req.body;
+    const { planId, billingCycle, successUrl, cancelUrl } = req.body;
 
-    if (!billingCycle || !successUrl || !cancelUrl) {
+    if (!planId || !successUrl || !cancelUrl) {
       res.status(400).json({
         success: false,
-        message: 'billingCycle, successUrl, and cancelUrl are required',
+        message: 'planId, successUrl, and cancelUrl are required',
       });
       return;
     }
 
-    if (billingCycle !== 'monthly' && billingCycle !== 'yearly') {
+    if (billingCycle && billingCycle !== 'monthly' && billingCycle !== 'yearly') {
       res.status(400).json({
         success: false,
         message: 'billingCycle must be "monthly" or "yearly"',
@@ -39,9 +60,20 @@ router.post('/checkout', protect, async (req: Request, res: Response): Promise<v
       return;
     }
 
+    // Look up the plan and get the correct price ID from the database
+    const { planService } = await import('../services/planService');
+    const priceId = await planService.getPriceId(planId);
+
+    // billingCycle falls back to plan's billingType for metadata
+    const { Plan } = await import('../models/Plan');
+    const plan = await Plan.findById(planId);
+    const resolvedBillingCycle = billingCycle || plan?.billingType || 'monthly';
+
     const checkoutUrl = await stripeService.createCheckoutSession(
       userId,
-      billingCycle,
+      planId,
+      priceId,
+      resolvedBillingCycle,
       user.email,
       successUrl,
       cancelUrl
