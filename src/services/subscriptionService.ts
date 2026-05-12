@@ -3,6 +3,9 @@ import { User } from '../models/User';
 import { AppError } from '../middlewares/errorHandler';
 import { ISubscriptionResponse } from '../interfaces';
 import { Types } from 'mongoose';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
 export class SubscriptionService {
   async createFreeSubscription(userId: string): Promise<IFreeSubscription> {
@@ -31,6 +34,7 @@ export class SubscriptionService {
   async createProSubscription(
     userId: string,
     proData: {
+      planId: string;
       billingCycle: 'monthly' | 'yearly';
       provider: string;
       providerSubscriptionId: string;
@@ -54,7 +58,12 @@ export class SubscriptionService {
       userId: new Types.ObjectId(userId),
       plan: 'pro',
       status: 'active',
-      ...proData,
+      planId: new Types.ObjectId(proData.planId),
+      billingCycle: proData.billingCycle,
+      provider: proData.provider,
+      providerSubscriptionId: proData.providerSubscriptionId,
+      providerCustomerId: proData.providerCustomerId,
+      currentPeriodEnd: proData.currentPeriodEnd,
     });
 
     await subscription.save();
@@ -72,6 +81,7 @@ export class SubscriptionService {
   async upgradeToProSubscription(
     userId: string,
     proData: {
+      planId: string;
       billingCycle: 'monthly' | 'yearly';
       provider: string;
       providerSubscriptionId: string;
@@ -90,6 +100,7 @@ export class SubscriptionService {
 
     (subscription as any).plan = 'pro';
     (subscription as any).status = 'active';
+    (subscription as any).planId = new Types.ObjectId(proData.planId);
     (subscription as any).billingCycle = proData.billingCycle;
     (subscription as any).provider = proData.provider;
     (subscription as any).providerSubscriptionId = proData.providerSubscriptionId;
@@ -110,8 +121,22 @@ export class SubscriptionService {
       throw new AppError(400, 'User already has a free subscription');
     }
 
+    // Cancel on Stripe before updating the DB
+    const providerSubscriptionId = (subscription as any).providerSubscriptionId;
+    if (providerSubscriptionId) {
+      try {
+        await stripe.subscriptions.cancel(providerSubscriptionId);
+      } catch (err: any) {
+        // If already canceled on Stripe side, continue — don't block the DB update
+        if (err?.code !== 'resource_missing') {
+          throw new AppError(400, `Failed to cancel Stripe subscription: ${err.message}`);
+        }
+      }
+    }
+
     (subscription as any).plan = 'free';
     (subscription as any).status = 'trialing';
+    (subscription as any).planId = undefined;
     (subscription as any).billingCycle = undefined;
     (subscription as any).provider = undefined;
     (subscription as any).providerSubscriptionId = undefined;
@@ -160,6 +185,7 @@ export class SubscriptionService {
 
     if (subscription.plan === 'pro') {
       const proSub = subscription as IProSubscription;
+      response.planId = proSub.planId?.toString();
       response.billingCycle = proSub.billingCycle;
       response.provider = proSub.provider;
       response.providerSubscriptionId = proSub.providerSubscriptionId;

@@ -69,7 +69,7 @@ export class PlanService {
 
     // Check if any active subscriptions use this plan
     const activeSubscription = await Subscription.findOne({
-      plan: 'pro',
+      planId: plan._id,
       status: { $in: ['active', 'past_due', 'trialing'] },
     });
 

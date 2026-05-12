@@ -38,7 +38,10 @@ export const protect = async (
       return;
     }
 
-    req.user = { id: user._id.toString(), isVerified: user.isVerified, isAdmin: user.isAdmin };
+    const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+    const isAdmin = !!adminEmail && user.email.toLowerCase() === adminEmail;
+
+    req.user = { id: user._id.toString(), isVerified: user.isVerified, isAdmin };
     next();
   } catch (error: any) {
     if (error.name === 'JsonWebTokenError') {

@@ -3,6 +3,7 @@ import { Schema, model, Document, Types } from 'mongoose';
 // Base subscription interface
 export interface ISubscriptionBase extends Document {
   userId: Types.ObjectId;
+  planId?: Types.ObjectId;   // reference to Plan document
   plan: 'free' | 'pro';
   status: 'active' | 'past_due' | 'canceled' | 'unpaid' | 'trialing';
   billingCycle?: 'monthly' | 'yearly';
@@ -18,11 +19,13 @@ export interface ISubscriptionBase extends Document {
 export interface IFreeSubscription extends ISubscriptionBase {
   plan: 'free';
   status: 'trialing';
+  planId: undefined;
 }
 
 // Pro plan subscription
 export interface IProSubscription extends ISubscriptionBase {
   plan: 'pro';
+  planId: Types.ObjectId;
   billingCycle: 'monthly' | 'yearly';
   status: 'active' | 'past_due' | 'canceled' | 'unpaid';
   provider: string;
@@ -41,6 +44,15 @@ const subscriptionSchema = new Schema<any>(
       ref: 'User',
       required: [true, 'User ID is required'],
       unique: true,
+    },
+    planId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Plan',
+      default: null,
+      required: function (this: any) {
+        return this.plan === 'pro';
+      },
+      sparse: true,
     },
     plan: {
       type: String,
@@ -112,6 +124,7 @@ subscriptionSchema.pre('save', function (next) {
     // Ensure free plan has trialing status
     doc.status = 'trialing';
     // Clear pro-only fields
+    doc.planId = undefined;
     doc.billingCycle = undefined;
     doc.provider = undefined;
     doc.providerSubscriptionId = undefined;
@@ -126,6 +139,9 @@ subscriptionSchema.pre('save', function (next) {
         new Error('Pro plan requires billingCycle and provider fields')
       );
     }
+    if (!doc.planId) {
+      return next(new Error('Pro plan requires a planId reference'));
+    }
   }
 
   next();
@@ -133,6 +149,7 @@ subscriptionSchema.pre('save', function (next) {
 
 // Index for common queries
 subscriptionSchema.index({ userId: 1 });
+subscriptionSchema.index({ planId: 1 });
 subscriptionSchema.index({ plan: 1 });
 subscriptionSchema.index({ status: 1 });
 

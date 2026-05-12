@@ -19,6 +19,7 @@ export interface IUserResponse {
 export interface ISubscriptionResponse {
   id: string;
   userId: string;
+  planId?: string;
   plan: 'free' | 'pro';
   status: string;
   billingCycle?: 'monthly' | 'yearly';

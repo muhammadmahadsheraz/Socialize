@@ -192,9 +192,10 @@ export class StripeService {
 
   private async handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
     const userId = session.metadata?.userId;
+    const planId = session.metadata?.planId;
     const billingCycle = session.metadata?.billingCycle as 'monthly' | 'yearly';
 
-    if (!userId || !billingCycle) return;
+    if (!userId || !billingCycle || !planId) return;
 
     // Retrieve the full subscription from Stripe
     const stripeSubscription = await stripe.subscriptions.retrieve(
@@ -206,6 +207,7 @@ export class StripeService {
       .catch(() => null);
 
     const proData = {
+      planId,
       billingCycle,
       provider: 'stripe',
       providerSubscriptionId: stripeSubscription.id,
