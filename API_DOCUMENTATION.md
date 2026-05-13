@@ -28,13 +28,13 @@ Creates a new user account and automatically creates a free subscription for the
 **Request Body:**
 ```json
 {
-  "fullname": "John Doe",           // REQUIRED — 2 to 100 characters
-  "email": "john@example.com",      // REQUIRED — valid email, must be unique
-  "phoneNumber": "+1234567890",     // REQUIRED — E.164 format
-  "password": "securePassword123",  // REQUIRED — minimum 6 characters
-  "profilePic": "https://example.com/pic.jpg",  // OPTIONAL — valid URL
-  "age": 25,                        // OPTIONAL — 13 to 150
-  "favouritePlaces": ["New York", "Paris"]       // OPTIONAL — array of strings
+  "fullname": "John Doe",
+  "email": "john@example.com",
+  "phoneNumber": "+1234567890",
+  "password": "securePassword123",
+  "profilePic": "https://example.com/pic.jpg",  // OPTIONAL
+  "age": 25,                                     // OPTIONAL
+  "favouritePlaces": ["New York", "Paris"]       // OPTIONAL
 }
 ```
 
@@ -195,11 +195,11 @@ Content-Type: application/json
 **Request Body (all fields optional — send only what you want to change):**
 ```json
 {
-  "fullname": "Jane Doe",                           // OPTIONAL — 2 to 100 characters
-  "phoneNumber": "+0987654321",                     // OPTIONAL — E.164 format
-  "profilePic": "https://example.com/new-pic.jpg", // OPTIONAL — valid URL
-  "age": 26,                                        // OPTIONAL — 13 to 150
-  "favouritePlaces": ["London", "Tokyo"]            // OPTIONAL — replaces entire array
+  "fullname": "Jane Doe",                           // OPTIONAL
+  "phoneNumber": "+0987654321",                     // OPTIONAL
+  "profilePic": "https://example.com/new-pic.jpg", // OPTIONAL
+  "age": 26,                                        // OPTIONAL
+  "favouritePlaces": ["London", "Tokyo"]            // OPTIONAL
 }
 ```
 
@@ -333,17 +333,23 @@ Content-Type: application/json
 
 ## Subscription Endpoints
 
-> **Important:** Subscriptions are created automatically when a user registers (free plan). The upgrade flow goes through Stripe Checkout — you do not call the upgrade endpoint directly. The Stripe webhook handles the DB update after payment. The endpoints below are for reading status, manual downgrade/cancel, and status updates driven by Stripe webhooks.
+> **Important:** Subscriptions are created automatically when a user registers (free plan). The upgrade flow is handled entirely by the frontend using Stripe's Payment Sheet — the backend provides the necessary Stripe credentials via `POST /stripe/payment-intent` and then monitors the result via Stripe webhooks. The endpoints below are for reading status, manual downgrade/cancel, and status updates driven by Stripe webhooks.
 
 ### Subscription Object
 
 **Free plan subscription:**
 ```json
 {
-  "id": "607f1f77bcf86cd799439012",          // subscription document ID
-  "userId": "507f1f77bcf86cd799439011",       // owner user ID
-  "plan": "free",                             // "free" | "pro"
-  "status": "trialing",                       // always "trialing" for free
+  "id": "607f1f77bcf86cd799439012",
+  "userId": "507f1f77bcf86cd799439011",
+  "plan": "free",
+  "status": "trialing",
+  "planId": null,                             // OPTIONAL (null for free plans)
+  "billingCycle": null,                       // OPTIONAL (null for free plans)
+  "provider": null,                           // OPTIONAL (null for free plans)
+  "providerSubscriptionId": null,             // OPTIONAL (null for free plans)
+  "providerCustomerId": null,                 // OPTIONAL (null for free plans)
+  "currentPeriodEnd": null,                   // OPTIONAL (null for free plans)
   "createdAt": "2026-05-13T10:50:00.000Z",
   "updatedAt": "2026-05-13T10:50:00.000Z"
 }
@@ -354,10 +360,10 @@ Content-Type: application/json
 {
   "id": "607f1f77bcf86cd799439012",
   "userId": "507f1f77bcf86cd799439011",
-  "planId": "507f1f77bcf86cd799439099",       // reference to Plan document
+  "planId": "507f1f77bcf86cd799439099",
   "plan": "pro",
-  "status": "trialing",                       // "trialing" during free trial, then "active"
-  "billingCycle": "monthly",                  // "monthly" | "yearly"
+  "status": "active",
+  "billingCycle": "monthly",
   "provider": "stripe",
   "providerSubscriptionId": "sub_1ABC234xyz",
   "providerCustomerId": "cus_9XYZ876abc",
@@ -463,7 +469,7 @@ Authorization: Bearer <token>
 ### 2. Upgrade to Pro
 **`POST /subscriptions/:userId/upgrade`**
 
-> **Note:** This endpoint is called internally by the Stripe webhook after a successful checkout. You should not call this directly from the frontend — use the Stripe Checkout flow instead (`POST /stripe/checkout`). This is documented here for completeness.
+> **Note:** This endpoint is called internally by the Stripe webhook after a successful payment. You should not call this directly from the frontend — use `POST /stripe/payment-intent` to get the Stripe credentials, let the frontend handle payment via Stripe Payment Sheet, then the webhook will trigger this automatically. This is documented here for completeness.
 
 **Headers:**
 ```
@@ -474,12 +480,12 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "planId": "507f1f77bcf86cd799439099",         // REQUIRED — MongoDB ObjectId of the Plan
-  "billingCycle": "monthly",                     // REQUIRED — "monthly" | "yearly"
-  "provider": "stripe",                          // REQUIRED — payment provider
-  "providerSubscriptionId": "sub_1ABC234xyz",    // REQUIRED — Stripe subscription ID
-  "providerCustomerId": "cus_9XYZ876abc",        // REQUIRED — Stripe customer ID
-  "currentPeriodEnd": "2026-06-13T10:50:00.000Z" // REQUIRED — ISO date of next billing date
+  "planId": "507f1f77bcf86cd799439099",
+  "billingCycle": "monthly",
+  "provider": "stripe",
+  "providerSubscriptionId": "sub_1ABC234xyz",
+  "providerCustomerId": "cus_9XYZ876abc",
+  "currentPeriodEnd": "2026-06-13T10:50:00.000Z"
 }
 ```
 
@@ -586,7 +592,7 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "status": "past_due"   // REQUIRED — see valid values below
+  "status": "past_due"
 }
 ```
 
@@ -670,10 +676,10 @@ No authentication required. Returns all active plans for the pricing page.
 
 ---
 
-### 2. Create Checkout Session
-**`POST /stripe/checkout`**
+### 2. Create Payment Intent
+**`POST /stripe/payment-intent`**
 
-Creates a Stripe Checkout session and returns a URL to redirect the user to. If the plan has `trialDays > 0`, Stripe will collect card info but not charge until the trial ends.
+Creates a Stripe Customer, PaymentIntent, and EphemeralKey. The frontend uses these three values directly with Stripe's Payment Sheet to handle billing without any redirects.
 
 **Headers:**
 ```
@@ -684,29 +690,33 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "planId": "507f1f77bcf86cd799439099",              // REQUIRED — MongoDB ObjectId from GET /stripe/plans
-  "successUrl": "https://yourapp.com/success",       // REQUIRED — redirect URL after successful payment
-  "cancelUrl": "https://yourapp.com/cancel"          // REQUIRED — redirect URL if user cancels
+  "planId": "507f1f77bcf86cd799439099"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | planId | string | Yes | MongoDB ObjectId of the plan from `GET /stripe/plans` |
-| successUrl | string | Yes | URL Stripe redirects to after successful checkout |
-| cancelUrl | string | Yes | URL Stripe redirects to if user clicks cancel |
-
-> The billing interval and trial period are taken directly from the plan — no need to send them.
 
 **Response (200 OK):**
 ```json
 {
   "success": true,
-  "url": "https://checkout.stripe.com/pay/cs_test_a1B2c3D4e5F6..."
+  "data": {
+    "paymentIntent": "pi_3ABC234xyz_secret_XYZ...",
+    "ephemeralKey": "ek_test_a1B2c3D4e5F6...",
+    "customer": "cus_9XYZ876abc"
+  }
 }
 ```
 
-Redirect the user to this URL. After payment, Stripe fires a webhook to your server which updates the subscription automatically.
+| Field | Description |
+|-------|-------------|
+| `paymentIntent` | The PaymentIntent `client_secret` — pass this to Stripe Payment Sheet |
+| `ephemeralKey` | Temporary key for the frontend to access the Stripe customer securely |
+| `customer` | Stripe Customer ID — pass this to Stripe Payment Sheet |
+
+> After the frontend completes payment using these values, Stripe fires a webhook to the backend which automatically upgrades the user's subscription.
 
 **Error — plan not found (400):**
 ```json
@@ -716,49 +726,17 @@ Redirect the user to this URL. After payment, Stripe fires a webhook to your ser
 }
 ```
 
----
-
-### 3. Create Billing Portal Session
-**`POST /stripe/portal`**
-
-Creates a Stripe Billing Portal session where the user can manage their payment method or cancel their subscription directly on Stripe.
-
-**Headers:**
-```
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "returnUrl": "https://yourapp.com/settings"   // REQUIRED — URL to return to after leaving portal
-}
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| returnUrl | string | Yes | URL the user is sent back to after leaving the Stripe portal |
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "url": "https://billing.stripe.com/session/test_a1B2c3D4..."
-}
-```
-
-**Error — no active pro subscription (400):**
+**Error — user not found (404):**
 ```json
 {
   "success": false,
-  "message": "No active pro subscription found"
+  "message": "User not found"
 }
 ```
 
 ---
 
-### 4. Stripe Webhook
+### 3. Stripe Webhook
 **`POST /stripe/webhook`**
 
 Receives and processes events from Stripe. This endpoint is called by Stripe directly — do not call it from your frontend.
@@ -772,7 +750,7 @@ stripe-signature: <stripe_signature_header>
 
 | Event | Action |
 |-------|--------|
-| `checkout.session.completed` | Creates or upgrades user subscription to pro |
+| `payment_intent.succeeded` | Creates or upgrades user subscription to pro |
 | `customer.subscription.updated` | Syncs subscription status and `currentPeriodEnd` |
 | `customer.subscription.deleted` | Downgrades user to free plan |
 | `invoice.payment_failed` | Sets subscription status to `past_due` |
@@ -799,28 +777,22 @@ stripe-signature: <stripe_signature_header>
 ```
 1. User registers → free subscription auto-created (status: trialing)
 2. User visits pricing page → GET /stripe/plans
-3. User picks a plan → POST /stripe/checkout with planId + successUrl + cancelUrl
-4. Backend returns Stripe checkout URL
-5. Frontend redirects user to Stripe
-6. User enters card info — if plan has trialDays > 0, card is saved but not charged yet
-7. Stripe fires checkout.session.completed webhook
+3. User picks a plan → POST /stripe/payment-intent with planId
+4. Backend returns { paymentIntent, ephemeralKey, customer }
+5. Frontend initialises Stripe Payment Sheet with these values
+6. User enters card info and confirms payment on the frontend
+7. Stripe fires payment_intent.succeeded webhook
 8. Backend upgrades subscription to pro (status: trialing during trial, active after)
 9. After trialDays, Stripe charges the card and fires customer.subscription.updated (status: active)
-10. If user cancels during trial → customer.subscription.deleted → backend downgrades to free
+10. If payment fails → invoice.payment_failed → backend sets status to past_due
 ```
 
 ### Cancelling a Subscription
 ```
-Option A — via your API:
+Via your API:
   POST /subscriptions/:userId/downgrade
   → Cancels on Stripe immediately
   → Sets user back to free/trialing in DB
-
-Option B — via Stripe Billing Portal:
-  POST /stripe/portal → get portal URL → redirect user
-  → User cancels on Stripe's portal
-  → Stripe fires customer.subscription.deleted webhook
-  → Backend downgrades to free automatically
 ```
 
 ---
@@ -878,5 +850,89 @@ Option B — via Stripe Billing Portal:
 {
   "success": false,
   "message": "Internal server error"
+}
+```
+
+
+---
+
+## Google Sign-In Endpoints
+
+### 1. Verify Google ID Token
+**`POST /api/auth/google/verify`**
+
+Verifies a Google ID token and signs in or creates a new user. This is the main endpoint for Google Sign-In on React Native.
+
+**Headers:**
+```
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "idToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| idToken | string | Yes | ID token from Google Sign-In (from frontend) |
+
+**Response (200 OK) — New User:**
+```json
+{
+  "success": true,
+  "message": "User created and signed in",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "507f1f77bcf86cd799439011",
+    "email": "john@gmail.com",
+    "fullname": "John Doe",
+    "profilePic": "https://lh3.googleusercontent.com/...",
+    "phoneNumber": "+00000000000",
+    "age": null,
+    "isVerified": true,
+    "favouritePlaces": [],
+    "createdAt": "2026-05-13T10:30:00.000Z",
+    "updatedAt": "2026-05-13T10:30:00.000Z"
+  }
+}
+```
+
+**Response (200 OK) — Existing User:**
+```json
+{
+  "success": true,
+  "message": "User signed in",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "507f1f77bcf86cd799439011",
+    "email": "john@gmail.com",
+    "fullname": "John Doe",
+    "profilePic": "https://lh3.googleusercontent.com/...",
+    "phoneNumber": "+1234567890",
+    "age": 28,
+    "isVerified": true,
+    "favouritePlaces": ["Paris", "Tokyo"],
+    "createdAt": "2026-05-13T10:30:00.000Z",
+    "updatedAt": "2026-05-13T10:35:00.000Z"
+  }
+}
+```
+
+**Error — Invalid token (401):**
+```json
+{
+  "success": false,
+  "message": "Invalid Google ID token"
+}
+```
+
+**Error — No email in token (401):**
+```json
+{
+  "success": false,
+  "message": "No email found in Google token"
 }
 ```

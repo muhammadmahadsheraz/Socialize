@@ -26,25 +26,22 @@ router.get('/plans', async (_req: Request, res: Response): Promise<void> => {
 });
 
 /**
- * POST /api/stripe/checkout
- * Create a Stripe checkout session — returns a URL to redirect the user to
+ * POST /api/stripe/payment-intent
+ * Creates a PaymentIntent, EphemeralKey, and Customer for frontend-handled billing
+ * Frontend uses these with Stripe Payment Sheet to handle payment directly
  * Protected: user must be logged in
  */
-router.post('/checkout', protect, async (req: Request, res: Response): Promise<void> => {
+router.post('/payment-intent', protect, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { planId, successUrl, cancelUrl } = req.body;
+    const { planId } = req.body;
 
-    if (!planId || !successUrl || !cancelUrl) {
-      res.status(400).json({
-        success: false,
-        message: 'planId, successUrl, and cancelUrl are required',
-      });
+    if (!planId) {
+      res.status(400).json({ success: false, message: 'planId is required' });
       return;
     }
 
     const userId = req.user!.id;
 
-    // Get user email for Stripe
     const { User } = await import('../models/User');
     const user = await User.findById(userId);
     if (!user) {
@@ -52,7 +49,6 @@ router.post('/checkout', protect, async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Look up the plan — billingCycle and trialDays come from the plan itself
     const { Plan } = await import('../models/Plan');
     const plan = await Plan.findById(planId);
     if (!plan) {
@@ -60,66 +56,23 @@ router.post('/checkout', protect, async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const { planService } = await import('../services/planService');
     const priceId = await planService.getPriceId(planId);
 
-    const checkoutUrl = await stripeService.createCheckoutSession(
+    const result = await stripeService.createPaymentIntent(
       userId,
       planId,
       priceId,
-      plan.billingType,
+      plan.price,
+      plan.currency?.toLowerCase() || 'usd',
       user.email,
-      successUrl,
-      cancelUrl,
-      plan.trialDays
+      user.fullname
     );
 
-    res.status(200).json({ success: true, url: checkoutUrl });
+    res.status(200).json({ success: true, data: result });
   } catch (error: any) {
     res.status(400).json({
       success: false,
-      message: error.message || 'Failed to create checkout session',
-    });
-  }
-});
-
-/**
- * POST /api/stripe/portal
- * Create a Stripe billing portal session — lets user manage/cancel their subscription
- * Protected: user must be logged in
- */
-router.post('/portal', protect, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { returnUrl } = req.body;
-
-    if (!returnUrl) {
-      res.status(400).json({ success: false, message: 'returnUrl is required' });
-      return;
-    }
-
-    const userId = req.user!.id;
-
-    const { subscriptionService } = await import('../services/subscriptionService');
-    const subscription = await subscriptionService.getSubscriptionByUserId(userId);
-
-    if (!subscription || subscription.plan === 'free') {
-      res.status(400).json({
-        success: false,
-        message: 'No active paid subscription found',
-      });
-      return;
-    }
-
-    const portalUrl = await stripeService.createBillingPortalSession(
-      (subscription as any).providerCustomerId,
-      returnUrl
-    );
-
-    res.status(200).json({ success: true, url: portalUrl });
-  } catch (error: any) {
-    res.status(400).json({
-      success: false,
-      message: error.message || 'Failed to create billing portal session',
+      message: error.message || 'Failed to create payment intent',
     });
   }
 });

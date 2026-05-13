@@ -1,5 +1,6 @@
 import express, { Express, Request, Response } from 'express';
 import dotenv from 'dotenv';
+import cors from 'cors';
 import { connectDB } from './config/database';
 import { errorHandler, AppError } from './middlewares/errorHandler';
 import userRoutes from './routes/userRoutes';
@@ -8,10 +9,17 @@ import eventRoutes from './routes/eventRoutes';
 import venueRoutes from './routes/venueRoutes';
 import stripeRoutes from './routes/stripeRoutes';
 import adminRoutes from './routes/adminRoutes';
+import authRoutes from './routes/authRoutes';
 
 dotenv.config();
 
 const app: Express = express();
+
+// CORS — allow frontend origin
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+}));
 
 // Stripe webhook needs raw body — must be registered BEFORE express.json()
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
@@ -35,6 +43,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/auth', authRoutes);
 
 // 404 handler
 app.use((_req: Request, _res: Response) => {

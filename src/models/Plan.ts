@@ -85,7 +85,7 @@ const planSchema = new Schema<IPlan>(
     },
     trialDays: {
       type: Number,
-      default: 0,
+      default: 7,
       min: [0, 'Trial days must be non-negative'],
     },
     currency: {

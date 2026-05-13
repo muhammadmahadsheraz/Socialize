@@ -13,55 +13,56 @@ export class StripeService {
   }
 
   /**
-   * Create a checkout session for upgrading to pro
-   * Returns a URL the frontend redirects the user to
+   * Create a PaymentIntent, EphemeralKey, and Customer for frontend-handled billing
+   * Returns { paymentIntent, ephemeralKey, customer } for the frontend to use with Stripe Payment Sheet
    */
-  async createCheckoutSession(
+  async createPaymentIntent(
     userId: string,
     planId: string,
     priceId: string,
-    billingType: string,
+    amount: number,
+    currency: string,
     customerEmail: string,
-    successUrl: string,
-    cancelUrl: string,
-    trialDays: number = 7
-  ): Promise<string> {
+    customerName: string
+  ): Promise<{ paymentIntent: string; ephemeralKey: string; customer: string }> {
     if (!priceId) {
       throw new AppError(400, 'Price ID is required');
     }
 
-    const sessionParams: Stripe.Checkout.SessionCreateParams = {
-      mode: 'subscription',
-      payment_method_types: ['card'],
-      customer_email: customerEmail,
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: { userId, planId, billingType },
-    };
+    // Create or retrieve Stripe customer
+    const existingCustomers = await stripe.customers.list({ email: customerEmail, limit: 1 });
+    let customer: Stripe.Customer;
 
-    if (trialDays > 0) {
-      sessionParams.subscription_data = { trial_period_days: trialDays };
+    if (existingCustomers.data.length > 0) {
+      customer = existingCustomers.data[0];
+    } else {
+      customer = await stripe.customers.create({
+        email: customerEmail,
+        name: customerName,
+        metadata: { userId, planId },
+      });
     }
 
-    const session = await stripe.checkout.sessions.create(sessionParams);
+    // Create ephemeral key for the customer (frontend needs this for Payment Sheet)
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: customer.id },
+      { apiVersion: '2023-10-16' }
+    );
 
-    return session.url as string;
-  }
-
-  /**
-   * Create a billing portal session so the user can manage/cancel their subscription
-   */
-  async createBillingPortalSession(
-    customerId: string,
-    returnUrl: string
-  ): Promise<string> {
-    const session = await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: returnUrl,
+    // Create payment intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency,
+      customer: customer.id,
+      payment_method_types: ['card'],
+      metadata: { userId, planId },
     });
 
-    return session.url;
+    return {
+      paymentIntent: paymentIntent.client_secret as string,
+      ephemeralKey: ephemeralKey.secret as string,
+      customer: customer.id,
+    };
   }
 
   /**

@@ -3,8 +3,8 @@ import { Schema, model, Document, Types } from 'mongoose';
 // Base subscription interface
 export interface ISubscriptionBase extends Document {
   userId: Types.ObjectId;
-  planId?: Types.ObjectId;   // reference to Plan document — undefined for free
-  plan: string;              // 'free' or the plan name e.g. 'Pro Monthly'
+  planId?: Types.ObjectId;  
+  plan: string;              
   status: 'active' | 'past_due' | 'canceled' | 'unpaid' | 'trialing';
   billingCycle?: 'monthly' | 'yearly';
   provider?: string;
@@ -24,7 +24,7 @@ export interface IFreeSubscription extends ISubscriptionBase {
 
 // Paid plan subscription (any named plan)
 export interface IProSubscription extends ISubscriptionBase {
-  plan: string;              // plan name e.g. 'Pro Monthly', 'Pro Yearly'
+  plan: string;             
   planId: Types.ObjectId;
   billingCycle: 'monthly' | 'yearly';
   status: 'active' | 'past_due' | 'canceled' | 'unpaid' | 'trialing';
