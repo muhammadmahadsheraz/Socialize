@@ -2,6 +2,7 @@ import { IUser } from '../models/User';
 import { ISubscription, IFreeSubscription, IProSubscription } from '../models/Subscription';
 import { IEvent, IParticipant } from '../models/Event';
 import { IVenue, ILocation, IBusinessHours } from '../models/Venue';
+import { IBooking } from '../models/Booking';
 
 export interface IUserResponse {
   id: string;
@@ -77,4 +78,19 @@ export interface IAuthResponse {
   token: string;
 }
 
-export type { IUser, ISubscription, IFreeSubscription, IProSubscription, IEvent, IParticipant, IVenue, ILocation, IBusinessHours };
+export interface IBookingResponse {
+  id: string;
+  userId: string;
+  eventId: string;
+  numberOfSeats: number;
+  totalCost: number;
+  type: 'booking' | 'reservation';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'expired';
+  paymentIntentId?: string;
+  paidAt?: Date;
+  expiresAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type { IUser, ISubscription, IFreeSubscription, IProSubscription, IEvent, IParticipant, IVenue, ILocation, IBusinessHours, IBooking };

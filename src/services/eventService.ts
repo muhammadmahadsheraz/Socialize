@@ -1,481 +1,410 @@
-import { Types } from 'mongoose';
+import mongoose, { Types } from 'mongoose';
 import { Event, IEvent, IParticipant } from '../models/Event';
+import { EventQuota } from '../models/EventQuota';
+import { Subscription } from '../models/Subscription';
+import { Plan } from '../models/Plan';
+import { AppError } from '../middlewares/errorHandler';
+
+type EventFilters = {
+  category?: string;
+  visibility?: string;
+  status?: string;
+  creatorId?: string;
+  venueId?: string;
+  cursor?: string;
+  limit?: number;
+};
+
+type EventCreateInput = {
+  category: string;
+  visibility: string;
+  isAfterHours: boolean;
+  userType: 'verified' | 'unverified';
+  title: string;
+  description: string;
+  coverImage: string;
+  date: Date;
+  startTime: string;
+  endTime: string;
+  seatPrice: number;
+  totalSeats: number;
+  venueId: string;
+  participants?: IParticipant[];
+};
 
 export class EventService {
-  /**
-   * Create a new event
-   */
-  async createEvent(
-    creatorId: string,
-    eventData: {
-      category: string;
-      visibility: string;
-      isAfterHours: boolean;
-      userType: 'verified' | 'unverified';
-      title: string;
-      description: string;
-      coverImage: string;
-      date: Date;
-      startTime: string;
-      endTime: string;
-      seatPrice: number;
-      totalSeats: number;
-      venueId: string;
-      participants?: IParticipant[];
-    }
-  ): Promise<IEvent> {
+  async createEvent(creatorId: string, eventData: EventCreateInput): Promise<IEvent> {
+    const session = await mongoose.startSession();
+    let createdEvent: IEvent | null = null;
+
     try {
-      const event = new Event({
-        creatorId: new Types.ObjectId(creatorId),
-        venueId: new Types.ObjectId(eventData.venueId),
-        category: eventData.category,
-        visibility: eventData.visibility,
-        isAfterHours: eventData.isAfterHours,
-        userType: eventData.userType,
-        title: eventData.title,
-        description: eventData.description,
-        coverImage: eventData.coverImage,
-        date: eventData.date,
-        startTime: eventData.startTime,
-        endTime: eventData.endTime,
-        seatPrice: eventData.seatPrice,
-        totalSeats: eventData.totalSeats,
-        participants: eventData.participants || [],
-        status: 'published',
+      await session.withTransaction(async () => {
+        const quota = await this.getEventQuotaInfo(creatorId);
+        if (quota.maxEvents <= 0) {
+          throw new AppError(403, 'Your plan does not allow event creation');
+        }
+
+        await EventQuota.updateOne(
+          { userId: new Types.ObjectId(creatorId), periodKey: quota.periodKey },
+          {
+            $setOnInsert: {
+              userId: new Types.ObjectId(creatorId),
+              periodKey: quota.periodKey,
+              periodStart: quota.periodStart,
+              periodEnd: quota.periodEnd,
+              eventCount: 0,
+            },
+          },
+          { upsert: true, session }
+        );
+
+        const counter = await EventQuota.findOneAndUpdate(
+          {
+            userId: new Types.ObjectId(creatorId),
+            periodKey: quota.periodKey,
+            eventCount: { $lt: quota.maxEvents },
+          },
+          {
+            $inc: { eventCount: 1 },
+            $set: {
+              periodStart: quota.periodStart,
+              periodEnd: quota.periodEnd,
+            },
+          },
+          { new: true, session }
+        );
+
+        if (!counter) {
+          throw new AppError(
+            403,
+            `You have reached your plan's limit of ${quota.maxEvents} event${quota.maxEvents === 1 ? '' : 's'} per billing period. Upgrade your plan to create more events.`
+          );
+        }
+
+        const event = new Event({
+          creatorId: new Types.ObjectId(creatorId),
+          venueId: new Types.ObjectId(eventData.venueId),
+          category: eventData.category,
+          visibility: eventData.visibility,
+          isAfterHours: eventData.isAfterHours,
+          userType: eventData.userType,
+          title: eventData.title,
+          description: eventData.description,
+          coverImage: eventData.coverImage,
+          date: eventData.date,
+          startTime: eventData.startTime,
+          endTime: eventData.endTime,
+          seatPrice: eventData.seatPrice,
+          totalSeats: eventData.totalSeats,
+          participants: eventData.participants || [],
+          status: 'published',
+        });
+
+        createdEvent = await event.save({ session });
       });
 
-      await event.save();
-      return event;
-    } catch (error) {
-      throw error;
+      if (!createdEvent) {
+        throw new AppError(400, 'Failed to create event');
+      }
+
+      return createdEvent;
+    } finally {
+      await session.endSession();
     }
   }
 
-  /**
-   * Get event by ID
-   */
   async getEventById(eventId: string): Promise<IEvent | null> {
-    try {
-      return await Event.findById(eventId)
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address');
-    } catch (error) {
-      throw error;
-    }
+    return Event.findById(eventId)
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address');
   }
 
-  /**
-   * Get all events with filters
-   */
-  async getAllEvents(filters: {
-    category?: string;
-    visibility?: string;
-    status?: string;
-    creatorId?: string;
-    venueId?: string;
-    page?: number;
-    limit?: number;
-  }): Promise<{ events: IEvent[]; total: number }> {
-    try {
-      const page = filters.page || 1;
-      const limit = filters.limit || 10;
-      const skip = (page - 1) * limit;
+  async getAllEvents(filters: EventFilters): Promise<{ events: IEvent[]; nextCursor: string | null }> {
+    const limit = Math.min(filters.limit || 10, 50);
+    const query: any = {};
 
-      const query: any = {};
+    if (filters.category) query.category = filters.category;
+    if (filters.visibility) query.visibility = filters.visibility;
+    if (filters.status) query.status = filters.status;
+    if (filters.creatorId) query.creatorId = new Types.ObjectId(filters.creatorId);
+    if (filters.venueId) query.venueId = new Types.ObjectId(filters.venueId);
 
-      if (filters.category) query.category = filters.category;
-      if (filters.visibility) query.visibility = filters.visibility;
-      if (filters.status) query.status = filters.status;
-      if (filters.creatorId) query.creatorId = new Types.ObjectId(filters.creatorId);
-      if (filters.venueId) query.venueId = new Types.ObjectId(filters.venueId);
+    await this.applyDateCursor(query, filters.cursor);
 
-      const events = await Event.find(query)
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address')
-        .sort({ date: 1 })
-        .skip(skip)
-        .limit(limit);
+    const events = await Event.find(query)
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address')
+      .sort({ date: 1, _id: 1 })
+      .limit(limit + 1);
 
-      const total = await Event.countDocuments(query);
+    const hasMore = events.length > limit;
+    const pageItems = hasMore ? events.slice(0, limit) : events;
+    const nextCursor = hasMore ? pageItems[pageItems.length - 1]._id.toString() : null;
 
-      return { events, total };
-    } catch (error) {
-      throw error;
-    }
+    return { events: pageItems, nextCursor };
   }
 
-  /**
-   * Get events by creator
-   */
   async getEventsByCreator(
     creatorId: string,
-    filters?: { status?: string; page?: number; limit?: number }
-  ): Promise<{ events: IEvent[]; total: number }> {
-    try {
-      const page = filters?.page || 1;
-      const limit = filters?.limit || 10;
-      const skip = (page - 1) * limit;
+    filters?: { status?: string; cursor?: string; limit?: number }
+  ): Promise<{ events: IEvent[]; nextCursor: string | null }> {
+    const limit = Math.min(filters?.limit || 10, 50);
+    const query: any = { creatorId: new Types.ObjectId(creatorId) };
+    if (filters?.status) query.status = filters.status;
+    if (filters?.cursor) query._id = { $lt: new Types.ObjectId(filters.cursor) };
 
-      const query: any = { creatorId: new Types.ObjectId(creatorId) };
-      if (filters?.status) query.status = filters.status;
+    const events = await Event.find(query)
+      .populate('venueId', 'name address')
+      .sort({ _id: -1 })
+      .limit(limit + 1);
 
-      const events = await Event.find(query)
-        .populate('venueId', 'name address')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit);
+    const hasMore = events.length > limit;
+    const pageItems = hasMore ? events.slice(0, limit) : events;
+    const nextCursor = hasMore ? pageItems[pageItems.length - 1]._id.toString() : null;
 
-      const total = await Event.countDocuments(query);
-
-      return { events, total };
-    } catch (error) {
-      throw error;
-    }
+    return { events: pageItems, nextCursor };
   }
 
-  /**
-   * Update event
-   */
   async updateEvent(
     eventId: string,
+    creatorId: string,
     updateData: Partial<IEvent>
   ): Promise<IEvent | null> {
-    try {
-      const event = await Event.findByIdAndUpdate(eventId, updateData, {
-        new: true,
-        runValidators: true,
-      })
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address');
+    const event = await Event.findOne({ _id: eventId, creatorId: new Types.ObjectId(creatorId) });
+    if (!event) return null;
 
-      return event;
-    } catch (error) {
-      throw error;
+    if (
+      typeof updateData.totalSeats === 'number' &&
+      updateData.totalSeats < event.bookedSeats + event.reservedSeats
+    ) {
+      throw new AppError(
+        400,
+        `Total seats cannot be less than booked plus reserved seats (${event.bookedSeats + event.reservedSeats})`
+      );
     }
+
+    Object.assign(event, updateData);
+    await event.save();
+
+    return Event.findById(eventId)
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address');
   }
 
-  /**
-   * Cancel event
-   */
-  async cancelEvent(eventId: string): Promise<IEvent | null> {
-    try {
-      const event = await Event.findById(eventId);
+  async cancelEvent(eventId: string, creatorId: string): Promise<IEvent | null> {
+    const event = await Event.findOne({ _id: eventId, creatorId: new Types.ObjectId(creatorId) });
+    if (!event) return null;
 
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      if (event.status === 'cancelled' || event.status === 'completed') {
-        throw new Error('Cannot cancel a completed or already cancelled event');
-      }
-
-      event.status = 'cancelled';
-      await event.save();
-
-      return await Event.findById(eventId)
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address');
-    } catch (error) {
-      throw error;
+    if (event.status === 'cancelled' || event.status === 'completed') {
+      throw new AppError(400, 'Cannot cancel a completed or already cancelled event');
     }
+
+    event.status = 'cancelled';
+    await event.save();
+
+    return Event.findById(eventId)
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address');
   }
 
-  /**
-   * Complete event
-   */
-  async completeEvent(eventId: string): Promise<IEvent | null> {
-    try {
-      const event = await Event.findById(eventId);
+  async completeEvent(eventId: string, creatorId: string): Promise<IEvent | null> {
+    const event = await Event.findOne({ _id: eventId, creatorId: new Types.ObjectId(creatorId) });
+    if (!event) return null;
 
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      if (event.status !== 'published') {
-        throw new Error('Only published events can be completed');
-      }
-
-      event.status = 'completed';
-      await event.save();
-
-      return await Event.findById(eventId)
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address');
-    } catch (error) {
-      throw error;
+    if (event.status !== 'published') {
+      throw new AppError(400, 'Only published events can be completed');
     }
+
+    event.status = 'completed';
+    await event.save();
+
+    return Event.findById(eventId)
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address');
   }
 
-  /**
-   * Add participant to event
-   */
   async addParticipant(
     eventId: string,
+    creatorId: string,
     participant: IParticipant
   ): Promise<IEvent | null> {
-    try {
-      const event = await Event.findById(eventId);
+    const event = await Event.findOne({ _id: eventId, creatorId: new Types.ObjectId(creatorId) });
+    if (!event) return null;
 
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      if (event.participants.length >= 100) {
-        throw new Error('Cannot add more than 100 participants');
-      }
-
-      event.participants.push(participant);
-      await event.save();
-
-      return await Event.findById(eventId)
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address');
-    } catch (error) {
-      throw error;
+    if (event.participants.length >= 100) {
+      throw new AppError(400, 'Cannot add more than 100 participants');
     }
+
+    event.participants.push(participant);
+    await event.save();
+
+    return Event.findById(eventId)
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address');
   }
 
-  /**
-   * Remove participant from event
-   */
   async removeParticipant(
     eventId: string,
-    participantIndex: number
+    creatorId: string,
+    participantId: string
   ): Promise<IEvent | null> {
-    try {
-      const event = await Event.findById(eventId);
+    const event = await Event.findOne({ _id: eventId, creatorId: new Types.ObjectId(creatorId) });
+    if (!event) return null;
 
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      if (participantIndex < 0 || participantIndex >= event.participants.length) {
-        throw new Error('Invalid participant index');
-      }
-
-      event.participants.splice(participantIndex, 1);
-      await event.save();
-
-      return await Event.findById(eventId)
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address');
-    } catch (error) {
-      throw error;
+    const index = event.participants.findIndex((p) => p._id.toString() === participantId);
+    if (index === -1) {
+      throw new AppError(404, 'Participant not found');
     }
+
+    event.participants.splice(index, 1);
+    await event.save();
+
+    return Event.findById(eventId)
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address');
   }
 
-  /**
-   * Update participant
-   */
   async updateParticipant(
     eventId: string,
-    participantIndex: number,
+    creatorId: string,
+    participantId: string,
     updatedParticipant: Partial<IParticipant>
   ): Promise<IEvent | null> {
-    try {
-      const event = await Event.findById(eventId);
+    const event = await Event.findOne({ _id: eventId, creatorId: new Types.ObjectId(creatorId) });
+    if (!event) return null;
 
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      if (participantIndex < 0 || participantIndex >= event.participants.length) {
-        throw new Error('Invalid participant index');
-      }
-
-      event.participants[participantIndex] = {
-        ...event.participants[participantIndex],
-        ...updatedParticipant,
-      };
-
-      await event.save();
-
-      return await Event.findById(eventId)
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address');
-    } catch (error) {
-      throw error;
+    const participant = event.participants.find((p) => p._id.toString() === participantId);
+    if (!participant) {
+      throw new AppError(404, 'Participant not found');
     }
+
+    Object.assign(participant, updatedParticipant);
+    await event.save();
+
+    return Event.findById(eventId)
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address');
   }
 
-  /**
-   * Book seats for an event
-   */
-  async bookSeats(
-    eventId: string,
-    numberOfSeats: number
-  ): Promise<{ event: IEvent | null; totalCost: number }> {
-    try {
-      const event = await Event.findById(eventId);
-
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      const availableSeats = event.totalSeats - event.bookedSeats - event.reservedSeats;
-
-      if (numberOfSeats > availableSeats) {
-        throw new Error(
-          `Not enough seats available. Available: ${availableSeats}, Requested: ${numberOfSeats}`
-        );
-      }
-
-      event.bookedSeats += numberOfSeats;
-      const totalCost = numberOfSeats * event.seatPrice;
-
-      await event.save();
-
-      return {
-        event: await Event.findById(eventId)
-          .populate('creatorId', 'fullname email profilePic')
-          .populate('venueId', 'name address'),
-        totalCost,
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  /**
-   * Reserve seats for an event
-   */
-  async reserveSeats(
-    eventId: string,
-    numberOfSeats: number
-  ): Promise<{ event: IEvent | null; totalCost: number }> {
-    try {
-      const event = await Event.findById(eventId);
-
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      const availableSeats = event.totalSeats - event.bookedSeats - event.reservedSeats;
-
-      if (numberOfSeats > availableSeats) {
-        throw new Error(
-          `Not enough seats available. Available: ${availableSeats}, Requested: ${numberOfSeats}`
-        );
-      }
-
-      event.reservedSeats += numberOfSeats;
-      const totalCost = numberOfSeats * event.seatPrice;
-
-      await event.save();
-
-      return {
-        event: await Event.findById(eventId)
-          .populate('creatorId', 'fullname email profilePic')
-          .populate('venueId', 'name address'),
-        totalCost,
-      };
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  /**
-   * Get available seats for an event
-   */
   async getAvailableSeats(eventId: string): Promise<number> {
-    try {
-      const event = await Event.findById(eventId);
-
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      return event.totalSeats - event.bookedSeats - event.reservedSeats;
-    } catch (error) {
-      throw error;
+    const event = await Event.findById(eventId);
+    if (!event) {
+      throw new AppError(404, 'Event not found');
     }
+
+    return event.totalSeats - event.bookedSeats - event.reservedSeats;
   }
 
-  /**
-   * Check if a user can attend an event based on verification requirements
-   */
   async canUserAttendEvent(eventId: string, userIsVerified: boolean): Promise<boolean> {
-    try {
-      const event = await Event.findById(eventId);
-
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      // If after-hours event, only verified users can attend
-      if (event.isAfterHours) {
-        return userIsVerified;
-      }
-
-      // If not after-hours, check userType
-      if (event.userType === 'verified') {
-        // Event requires verified users
-        return userIsVerified;
-      }
-
-      // userType is 'unverified', anyone can attend
-      return true;
-    } catch (error) {
-      throw error;
+    const event = await Event.findById(eventId);
+    if (!event) {
+      throw new AppError(404, 'Event not found');
     }
+
+    if (event.isAfterHours) {
+      return userIsVerified;
+    }
+
+    if (event.userType === 'verified') {
+      return userIsVerified;
+    }
+
+    return true;
   }
 
-  /**
-   * Delete event
-   */
-  async deleteEvent(eventId: string): Promise<void> {
-    try {
-      const event = await Event.findById(eventId);
-
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      if (event.status === 'completed') {
-        throw new Error('Cannot delete a completed event');
-      }
-
-      await Event.findByIdAndDelete(eventId);
-    } catch (error) {
-      throw error;
+  async deleteEvent(eventId: string, creatorId: string): Promise<void> {
+    const event = await Event.findOne({ _id: eventId, creatorId: new Types.ObjectId(creatorId) });
+    if (!event) {
+      throw new AppError(404, 'Event not found');
     }
+
+    if (event.status === 'completed') {
+      throw new AppError(400, 'Cannot delete a completed event');
+    }
+
+    await Event.findByIdAndDelete(eventId);
   }
 
-  /**
-   * Search events by title or description
-   */
   async searchEvents(
     searchTerm: string,
-    filters?: { category?: string; visibility?: string; page?: number; limit?: number }
-  ): Promise<{ events: IEvent[]; total: number }> {
-    try {
-      const page = filters?.page || 1;
-      const limit = filters?.limit || 10;
-      const skip = (page - 1) * limit;
+    filters?: { category?: string; visibility?: string; cursor?: string; limit?: number }
+  ): Promise<{ events: IEvent[]; nextCursor: string | null }> {
+    const limit = Math.min(filters?.limit || 10, 50);
+    const query: any = { $text: { $search: searchTerm } };
 
-      const query: any = {
-        $or: [
-          { title: { $regex: searchTerm, $options: 'i' } },
-          { description: { $regex: searchTerm, $options: 'i' } },
-        ],
-      };
+    if (filters?.category) query.category = filters.category;
+    if (filters?.visibility) query.visibility = filters.visibility;
+    if (filters?.cursor) query._id = { $lt: new Types.ObjectId(filters.cursor) };
 
-      if (filters?.category) query.category = filters.category;
-      if (filters?.visibility) query.visibility = filters.visibility;
+    const events = await Event.find(query, { score: { $meta: 'textScore' } })
+      .populate('creatorId', 'fullname email profilePic')
+      .populate('venueId', 'name address')
+      .sort({ score: { $meta: 'textScore' }, _id: -1 })
+      .limit(limit + 1);
 
-      const events = await Event.find(query)
-        .populate('creatorId', 'fullname email profilePic')
-        .populate('venueId', 'name address')
-        .sort({ date: 1 })
-        .skip(skip)
-        .limit(limit);
+    const hasMore = events.length > limit;
+    const pageItems = hasMore ? events.slice(0, limit) : events;
+    const nextCursor = hasMore ? pageItems[pageItems.length - 1]._id.toString() : null;
 
-      const total = await Event.countDocuments(query);
+    return { events: pageItems, nextCursor };
+  }
 
-      return { events, total };
-    } catch (error) {
-      throw error;
+  private async applyDateCursor(query: any, cursor?: string): Promise<void> {
+    if (!cursor) return;
+
+    const cursorEvent = await Event.findById(cursor).select('date _id').lean();
+    if (!cursorEvent) {
+      throw new AppError(400, 'Invalid cursor');
     }
+
+    query.$or = [
+      { date: { $gt: cursorEvent.date } },
+      {
+        date: cursorEvent.date,
+        _id: { $gt: cursorEvent._id },
+      },
+    ];
+  }
+
+  private async getEventQuotaInfo(userId: string): Promise<{
+    maxEvents: number;
+    periodKey: string;
+    periodStart: Date;
+    periodEnd?: Date;
+  }> {
+    const subscription = await Subscription.findOne({ userId: new Types.ObjectId(userId) });
+    if (!subscription) throw new AppError(403, 'No active subscription found');
+
+    if (subscription.plan === 'free') {
+      const freePlan = await Plan.findOne({ name: { $regex: /^free$/i } });
+      return {
+        maxEvents: freePlan?.maxEvents ?? 0,
+        periodKey: 'free-lifetime',
+        periodStart: new Date(0),
+      };
+    }
+
+    if (!subscription.planId) throw new AppError(403, 'Subscription plan reference missing');
+    const plan = await Plan.findById(subscription.planId);
+    if (!plan) throw new AppError(404, 'Subscription plan not found');
+
+    const periodEnd = (subscription as any).currentPeriodEnd as Date;
+    if (!periodEnd) throw new AppError(400, 'Subscription period information missing');
+
+    const periodStart = new Date(periodEnd);
+    const billingCycle = (subscription as any).billingCycle as string;
+    if (billingCycle === 'yearly') {
+      periodStart.setFullYear(periodStart.getFullYear() - 1);
+    } else {
+      periodStart.setMonth(periodStart.getMonth() - 1);
+    }
+
+    return {
+      maxEvents: plan.maxEvents,
+      periodKey: `${periodStart.toISOString()}_${periodEnd.toISOString()}`,
+      periodStart,
+      periodEnd,
+    };
   }
 }
 

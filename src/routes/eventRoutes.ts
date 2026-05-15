@@ -33,7 +33,7 @@ router.post('/', validateRequest(createEventSchema), async (req: Request, res: R
       event,
     });
   } catch (error: any) {
-    res.status(400).json({
+    res.status(error.statusCode || 400).json({
       message: error.message || 'Failed to create event',
     });
   }
@@ -72,16 +72,15 @@ router.get('/', async (req: Request, res: Response) => {
       status: req.query.status as string,
       creatorId: req.query.creatorId as string,
       venueId: req.query.venueId as string,
-      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      cursor: req.query.cursor as string,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
     };
 
-    const { events, total } = await eventService.getAllEvents(filters);
+    const { events, nextCursor } = await eventService.getAllEvents(filters);
 
     res.status(200).json({
       events,
-      total,
-      page: filters.page,
+      nextCursor,
       limit: filters.limit,
     });
   } catch (error: any) {
@@ -99,19 +98,18 @@ router.get('/creator/:creatorId', async (req: Request, res: Response) => {
   try {
     const filters = {
       status: req.query.status as string,
-      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      cursor: req.query.cursor as string,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
     };
 
-    const { events, total } = await eventService.getEventsByCreator(
+    const { events, nextCursor } = await eventService.getEventsByCreator(
       req.params.creatorId,
       filters
     );
 
     res.status(200).json({
       events,
-      total,
-      page: filters.page,
+      nextCursor,
       limit: filters.limit,
     });
   } catch (error: any) {
@@ -127,7 +125,7 @@ router.get('/creator/:creatorId', async (req: Request, res: Response) => {
  */
 router.put('/:id', validateRequest(updateEventSchema), async (req: Request, res: Response): Promise<void> => {
   try {
-    const event = await eventService.updateEvent(req.params.id, req.body);
+    const event = await eventService.updateEvent(req.params.id, req.user!.id, req.body);
 
     if (!event) {
       res.status(404).json({ message: 'Event not found' });
@@ -151,7 +149,7 @@ router.put('/:id', validateRequest(updateEventSchema), async (req: Request, res:
  */
 router.post('/:id/cancel', async (req: Request, res: Response): Promise<void> => {
   try {
-    const event = await eventService.cancelEvent(req.params.id);
+    const event = await eventService.cancelEvent(req.params.id, req.user!.id);
 
     if (!event) {
       res.status(404).json({ message: 'Event not found' });
@@ -175,7 +173,7 @@ router.post('/:id/cancel', async (req: Request, res: Response): Promise<void> =>
  */
 router.post('/:id/complete', async (req: Request, res: Response): Promise<void> => {
   try {
-    const event = await eventService.completeEvent(req.params.id);
+    const event = await eventService.completeEvent(req.params.id, req.user!.id);
 
     if (!event) {
       res.status(404).json({ message: 'Event not found' });
@@ -202,7 +200,7 @@ router.post(
   validateRequest(addParticipantSchema),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const event = await eventService.addParticipant(req.params.id, req.body);
+      const event = await eventService.addParticipant(req.params.id, req.user!.id, req.body);
 
       if (!event) {
         res.status(404).json({ message: 'Event not found' });
@@ -222,13 +220,12 @@ router.post(
 );
 
 /**
- * DELETE /events/:id/participants/:index
- * Remove participant from event
+ * DELETE /events/:id/participants/:participantId
+ * Remove participant from event by participant ID
  */
-router.delete('/:id/participants/:index', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id/participants/:participantId', async (req: Request, res: Response): Promise<void> => {
   try {
-    const participantIndex = parseInt(req.params.index);
-    const event = await eventService.removeParticipant(req.params.id, participantIndex);
+    const event = await eventService.removeParticipant(req.params.id, req.user!.id, req.params.participantId);
 
     if (!event) {
       res.status(404).json({ message: 'Event not found' });
@@ -247,18 +244,18 @@ router.delete('/:id/participants/:index', async (req: Request, res: Response): P
 });
 
 /**
- * PUT /events/:id/participants/:index
- * Update participant
+ * PUT /events/:id/participants/:participantId
+ * Update participant by participant ID
  */
 router.put(
-  '/:id/participants/:index',
+  '/:id/participants/:participantId',
   validateRequest(addParticipantSchema),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const participantIndex = parseInt(req.params.index);
       const event = await eventService.updateParticipant(
         req.params.id,
-        participantIndex,
+        req.user!.id,
+        req.params.participantId,
         req.body
       );
 
@@ -279,59 +276,7 @@ router.put(
   }
 );
 
-/**
- * POST /events/:id/book-seats
- * Book seats for event
- */
-router.post('/:id/book-seats', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { numberOfSeats } = req.body;
 
-    if (!numberOfSeats || numberOfSeats < 1) {
-      res.status(400).json({ message: 'Invalid number of seats' });
-      return;
-    }
-
-    const { event, totalCost } = await eventService.bookSeats(req.params.id, numberOfSeats);
-
-    res.status(200).json({
-      message: 'Seats booked successfully',
-      event,
-      totalCost,
-    });
-  } catch (error: any) {
-    res.status(400).json({
-      message: error.message || 'Failed to book seats',
-    });
-  }
-});
-
-/**
- * POST /events/:id/reserve-seats
- * Reserve seats for event
- */
-router.post('/:id/reserve-seats', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { numberOfSeats } = req.body;
-
-    if (!numberOfSeats || numberOfSeats < 1) {
-      res.status(400).json({ message: 'Invalid number of seats' });
-      return;
-    }
-
-    const { event, totalCost } = await eventService.reserveSeats(req.params.id, numberOfSeats);
-
-    res.status(200).json({
-      message: 'Seats reserved successfully',
-      event,
-      totalCost,
-    });
-  } catch (error: any) {
-    res.status(400).json({
-      message: error.message || 'Failed to reserve seats',
-    });
-  }
-});
 
 /**
  * GET /events/:id/available-seats
@@ -357,7 +302,7 @@ router.get('/:id/available-seats', async (req: Request, res: Response) => {
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    await eventService.deleteEvent(req.params.id);
+    await eventService.deleteEvent(req.params.id, req.user!.id);
 
     res.status(200).json({
       message: 'Event deleted successfully',
@@ -378,16 +323,15 @@ router.get('/search/:term', async (req: Request, res: Response) => {
     const filters = {
       category: req.query.category as string,
       visibility: req.query.visibility as string,
-      page: req.query.page ? parseInt(req.query.page as string) : 1,
+      cursor: req.query.cursor as string,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
     };
 
-    const { events, total } = await eventService.searchEvents(req.params.term, filters);
+    const { events, nextCursor } = await eventService.searchEvents(req.params.term, filters);
 
     res.status(200).json({
       events,
-      total,
-      page: filters.page,
+      nextCursor,
       limit: filters.limit,
     });
   } catch (error: any) {
@@ -398,17 +342,13 @@ router.get('/search/:term', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /events/:id/check-attendance
- * Check if user can attend event
+ * GET /events/:id/check-attendance
+ * Check if the authenticated user can attend the event.
+ * Reads isVerified directly from the JWT — no body needed.
  */
-router.post('/:id/check-attendance', async (req: Request, res: Response): Promise<void> => {
+router.get('/:id/check-attendance', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userIsVerified } = req.body;
-
-    if (typeof userIsVerified !== 'boolean') {
-      res.status(400).json({ message: 'userIsVerified must be a boolean' });
-      return;
-    }
+    const userIsVerified = req.user!.isVerified;
 
     const canAttend = await eventService.canUserAttendEvent(req.params.id, userIsVerified);
 

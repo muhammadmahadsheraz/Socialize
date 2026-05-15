@@ -10,6 +10,8 @@ import venueRoutes from './routes/venueRoutes';
 import stripeRoutes from './routes/stripeRoutes';
 import adminRoutes from './routes/adminRoutes';
 import authRoutes from './routes/authRoutes';
+import bookingRoutes from './routes/bookingRoutes';
+import bookingService from './services/bookingService';
 
 dotenv.config();
 
@@ -44,6 +46,17 @@ app.use('/api/venues', venueRoutes);
 app.use('/api/stripe', stripeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/bookings', bookingRoutes);
+
+if (process.env.ENABLE_RESERVATION_CLEANUP === 'true') {
+  setInterval(async () => {
+    try {
+      await bookingService.expireStaleReservations();
+    } catch (error) {
+      console.error('Failed to expire stale reservations:', error);
+    }
+  }, 60 * 1000);
+}
 
 // 404 handler
 app.use((_req: Request, _res: Response) => {

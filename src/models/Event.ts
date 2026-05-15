@@ -1,6 +1,7 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
 export interface IParticipant {
+  _id: Types.ObjectId;
   participantImage: string;
   participantName: string;
   participantTitle: string;
@@ -50,8 +51,8 @@ const participantSchema = new Schema<IParticipant>(
       minlength: [2, 'Participant title must be at least 2 characters'],
       maxlength: [100, 'Participant title cannot exceed 100 characters'],
     },
-  },
-  { _id: false }
+  }
+  // _id is enabled by default — each participant gets a stable MongoDB ObjectId
 );
 
 const eventSchema = new Schema<IEvent>(
@@ -202,5 +203,9 @@ eventSchema.index({ visibility: 1 });
 eventSchema.index({ status: 1 });
 eventSchema.index({ date: 1 });
 eventSchema.index({ creatorId: 1, status: 1 });
+eventSchema.index({ date: 1, _id: 1 });
+eventSchema.index({ title: 'text', description: 'text' });
+// Used by the event creation quota check (countDocuments by creator + period)
+eventSchema.index({ creatorId: 1, createdAt: 1 });
 
 export const Event = model<IEvent>('Event', eventSchema);
