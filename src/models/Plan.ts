@@ -1,9 +1,8 @@
 import { Schema, model, Document } from 'mongoose';
 
-// Stripe-compatible billing types
 export type BillingType = 'monthly' | 'yearly' | 'weekly' | 'daily';
 
-// Maps UI billingType to Stripe interval + intervalCount
+// Maps frontend billing choices to Stripe recurring interval settings.
 export const BILLING_TYPE_MAP: Record<BillingType, { interval: 'day' | 'week' | 'month' | 'year'; intervalCount: number }> = {
   daily:   { interval: 'day',   intervalCount: 1 },
   weekly:  { interval: 'week',  intervalCount: 1 },
@@ -21,9 +20,8 @@ export interface IPlan extends Document {
   prioritySupport: boolean;
   status: boolean;
   isPopular: boolean;
-  trialDays: number;        // 0 = no trial, 7 = 7-day free trial, etc.
+  trialDays: number;
 
-  // Internal Stripe fields
   currency: string;
   stripeProductId: string;
   stripePriceId: string;

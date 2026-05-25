@@ -8,25 +8,10 @@ import jwt from 'jsonwebtoken';
 
 const router = Router();
 
-/**
- * POST /api/users/register  — public
- * POST /api/users/login     — public
- * GET  /api/users/:id       — protected
- * PUT  /api/users/:id       — protected
- * DELETE /api/users/:id     — protected
- * POST /api/users/:id/favourite-places   — protected
- * DELETE /api/users/:id/favourite-places — protected
- */
-
-/**
- * POST /api/users/register
- * Register a new user
- */
 router.post('/register', validateRequest(createUserSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const user = await userService.createUser(req.body);
 
-    // Auto-create a free subscription on registration
     await subscriptionService.createFreeSubscription(user._id.toString());
 
     const token = jwt.sign(
@@ -49,10 +34,6 @@ router.post('/register', validateRequest(createUserSchema), async (req: Request,
   }
 });
 
-/**
- * POST /api/users/login
- * Login a user
- */
 router.post('/login', validateRequest(loginSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
@@ -90,10 +71,6 @@ router.post('/login', validateRequest(loginSchema), async (req: Request, res: Re
   }
 });
 
-/**
- * GET /api/users/:id
- * Get user by ID
- */
 router.get('/:id', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const user = await userService.getUserById(req.params.id);
@@ -115,10 +92,6 @@ router.get('/:id', protect, async (req: Request, res: Response): Promise<void> =
   }
 });
 
-/**
- * PUT /api/users/:id
- * Update user
- */
 router.put('/:id', protect, validateRequest(updateUserSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const user = await userService.updateUser(req.params.id, req.body);
@@ -136,10 +109,6 @@ router.put('/:id', protect, validateRequest(updateUserSchema), async (req: Reque
   }
 });
 
-/**
- * DELETE /api/users/:id
- * Delete user
- */
 router.delete('/:id', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     await userService.deleteUser(req.params.id);
@@ -156,10 +125,6 @@ router.delete('/:id', protect, async (req: Request, res: Response): Promise<void
   }
 });
 
-/**
- * POST /api/users/:id/favourite-places
- * Add a favourite place
- */
 router.post('/:id/favourite-places', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const { place } = req.body;
@@ -184,10 +149,6 @@ router.post('/:id/favourite-places', protect, async (req: Request, res: Response
   }
 });
 
-/**
- * DELETE /api/users/:id/favourite-places
- * Remove a favourite place
- */
 router.delete('/:id/favourite-places', protect, async (req: Request, res: Response): Promise<void> => {
   try {
     const { place } = req.body;

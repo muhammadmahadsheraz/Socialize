@@ -61,7 +61,6 @@ const bookingSchema = new Schema<IBooking>(
       type: Date,
       default: null,
     },
-    // Only set for reservations — seats are released when this date passes
     expiresAt: {
       type: Date,
       default: null,
@@ -76,14 +75,13 @@ const bookingSchema = new Schema<IBooking>(
   }
 );
 
-// Indexes for common queries
 bookingSchema.index({ userId: 1 });
 bookingSchema.index({ eventId: 1 });
 bookingSchema.index({ userId: 1, eventId: 1 });
 bookingSchema.index({ status: 1 });
 bookingSchema.index({ type: 1 });
 bookingSchema.index({ paymentIntentId: 1 }, { sparse: true });
-// For expiry cleanup jobs — find all pending reservations past their expiry
+// Supports reservation expiry cleanup.
 bookingSchema.index({ expiresAt: 1, status: 1 });
 bookingSchema.index({ expirationBatchId: 1 }, { sparse: true });
 

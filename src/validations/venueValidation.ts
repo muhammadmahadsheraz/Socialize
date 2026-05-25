@@ -1,6 +1,5 @@
 import Joi from 'joi';
 
-// Location validation schema
 const locationSchema = Joi.object({
   addressLine: Joi.string()
     .trim()
@@ -78,7 +77,6 @@ const locationSchema = Joi.object({
     }),
 });
 
-// Business hours validation schema
 const businessHoursSchema = Joi.object({
   day: Joi.string()
     .valid('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
@@ -116,7 +114,6 @@ const businessHoursSchema = Joi.object({
     }),
 });
 
-// Create venue validation schema
 export const createVenueSchema = Joi.object({
   name: Joi.string()
     .trim()
@@ -192,7 +189,6 @@ export const createVenueSchema = Joi.object({
     .default('draft'),
 });
 
-// Update venue validation schema
 export const updateVenueSchema = Joi.object({
   name: Joi.string()
     .trim()

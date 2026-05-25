@@ -1,0 +1,22 @@
+{
+  "PK": {
+    "description": "Pakistani CNIC - 13 digits with optional hyphens",
+    "regex": "^\\d{5}[-\\s]?\\d{7}[-\\s]?\\d$",
+    "checksum": null
+  },
+  "LV": {
+    "description": "Latvian Personal Code - 11 digits",
+    "regex": "^\\d{11}$",
+    "checksum": "latvianPersonalCode"
+  },
+  "US": {
+    "description": "US Driver's License (generic fallback)",
+    "regex": "^[A-Z0-9]{5,15}$",
+    "checksum": null
+  },
+  "default": {
+    "description": "Generic numeric ID (9-15 digits)",
+    "regex": "^\\d{9,15}$",
+    "checksum": null
+  }
+}

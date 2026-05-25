@@ -9,14 +9,8 @@ import {
 
 const router = Router();
 
-// All booking routes require authentication
 router.use(protect);
 
-/**
- * POST /bookings/reserve
- * Reserve seats for an event (holds seats for 15 minutes).
- * Use this before initiating payment so seats are held while the user pays.
- */
 router.post('/reserve', validateRequest(createReservationSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
@@ -37,11 +31,6 @@ router.post('/reserve', validateRequest(createReservationSchema), async (req: Re
   }
 });
 
-/**
- * POST /bookings/:id/confirm
- * Confirm a booking or reservation after payment succeeds.
- * Provide the Stripe paymentIntentId in the body.
- */
 router.post('/:id/confirm', validateRequest(confirmBookingSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const { paymentIntentId } = req.body;
@@ -61,11 +50,6 @@ router.post('/:id/confirm', validateRequest(confirmBookingSchema), async (req: R
   }
 });
 
-/**
- * POST /bookings/:id/cancel
- * Cancel a booking or reservation.
- * Seats are released back to the event.
- */
 router.post('/:id/cancel', async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
@@ -85,11 +69,6 @@ router.post('/:id/cancel', async (req: Request, res: Response): Promise<void> =>
   }
 });
 
-/**
- * GET /bookings/my
- * Get all bookings for the authenticated user.
- * Query params: type, status, page, limit
- */
 router.get('/my', async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
@@ -118,10 +97,6 @@ router.get('/my', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-/**
- * GET /bookings/:id
- * Get a single booking by ID.
- */
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const booking = await bookingService.getBookingById(req.params.id);
@@ -140,12 +115,6 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-/**
- * GET /bookings/event/:eventId
- * Get all bookings for a specific event.
- * Intended for event creators / admins.
- * Query params: type, status, page, limit
- */
 router.get('/event/:eventId', async (req: Request, res: Response): Promise<void> => {
   try {
     const filters = {
@@ -175,10 +144,6 @@ router.get('/event/:eventId', async (req: Request, res: Response): Promise<void>
   }
 });
 
-/**
- * GET /bookings/event/:eventId/my
- * Check if the authenticated user has an active booking for a specific event.
- */
 router.get('/event/:eventId/my', async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;

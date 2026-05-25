@@ -52,7 +52,6 @@ const participantSchema = new Schema<IParticipant>(
       maxlength: [100, 'Participant title cannot exceed 100 characters'],
     },
   }
-  // _id is enabled by default — each participant gets a stable MongoDB ObjectId
 );
 
 const eventSchema = new Schema<IEvent>(
@@ -176,7 +175,6 @@ const eventSchema = new Schema<IEvent>(
   }
 );
 
-// Validate that endTime is after startTime
 eventSchema.pre('save', function (next) {
   const startTime = this.startTime;
   const endTime = this.endTime;
@@ -185,7 +183,6 @@ eventSchema.pre('save', function (next) {
     return next(new Error('End time must be after start time'));
   }
 
-  // Ensure booked + reserved seats don't exceed total seats
   if (this.bookedSeats + this.reservedSeats > this.totalSeats) {
     return next(
       new Error('Booked and reserved seats cannot exceed total seats')
@@ -195,7 +192,6 @@ eventSchema.pre('save', function (next) {
   next();
 });
 
-// Indexes for common queries
 eventSchema.index({ creatorId: 1 });
 eventSchema.index({ venueId: 1 });
 eventSchema.index({ category: 1 });
@@ -205,7 +201,7 @@ eventSchema.index({ date: 1 });
 eventSchema.index({ creatorId: 1, status: 1 });
 eventSchema.index({ date: 1, _id: 1 });
 eventSchema.index({ title: 'text', description: 'text' });
-// Used by the event creation quota check (countDocuments by creator + period)
+// Supports quota checks by creator and billing period.
 eventSchema.index({ creatorId: 1, createdAt: 1 });
 
 export const Event = model<IEvent>('Event', eventSchema);

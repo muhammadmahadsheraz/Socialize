@@ -1,6 +1,8 @@
-import mongoose, { Types } from 'mongoose';
+import { Types } from 'mongoose';
 import { Booking, IBooking } from '../models/Booking';
 import { Event } from '../models/Event';
+import { Subscription } from '../models/Subscription';
+import { Plan } from '../models/Plan';
 import { AppError } from '../middlewares/errorHandler';
 
 const RESERVATION_TTL_MINUTES = 15;
@@ -13,6 +15,7 @@ export class BookingService {
   ): Promise<IBooking> {
     const expiresAt = new Date(Date.now() + RESERVATION_TTL_MINUTES * 60 * 1000);
 
+    // Atomically reserves seats only when enough capacity remains.
     const event = await Event.findOneAndUpdate(
       {
         _id: new Types.ObjectId(eventId),
@@ -31,10 +34,7 @@ export class BookingService {
     if (!event) {
       const rawEvent = await Event.findById(eventId);
       if (!rawEvent) throw new AppError(404, 'Event not found');
-      if (rawEvent.status !== 'published') {
-        throw new AppError(400, 'Event is not available for booking');
-      }
-
+      if (rawEvent.status !== 'published') throw new AppError(400, 'Event is not available for booking');
       const available = rawEvent.totalSeats - rawEvent.bookedSeats - rawEvent.reservedSeats;
       throw new AppError(
         400,
@@ -42,11 +42,13 @@ export class BookingService {
       );
     }
 
+    const totalCost = numberOfSeats * event.seatPrice;
+
     const booking = new Booking({
       userId: new Types.ObjectId(userId),
       eventId: new Types.ObjectId(eventId),
       numberOfSeats,
-      totalCost: numberOfSeats * event.seatPrice,
+      totalCost,
       type: 'reservation',
       status: 'pending',
       expiresAt,
@@ -57,223 +59,108 @@ export class BookingService {
   }
 
   async confirmBooking(bookingId: string, paymentIntentId: string): Promise<IBooking> {
-    const session = await mongoose.startSession();
-    let confirmedBooking: IBooking | null = null;
+    const booking = await Booking.findById(bookingId);
+    if (!booking) throw new AppError(404, 'Booking not found');
 
-    try {
-      await session.withTransaction(async () => {
-        const booking = await Booking.findById(bookingId).session(session);
-        if (!booking) throw new AppError(404, 'Booking not found');
-
-        if (booking.status === 'confirmed') {
-          throw new AppError(400, 'Booking is already confirmed');
-        }
-        if (booking.status !== 'pending') {
-          throw new AppError(400, `Cannot confirm a ${booking.status} booking`);
-        }
-        if (booking.type !== 'reservation') {
-          throw new AppError(400, 'Only pending reservations can be confirmed');
-        }
-        if (booking.expiresAt && booking.expiresAt <= new Date()) {
-          await Event.findByIdAndUpdate(
-            booking.eventId,
-            { $inc: { reservedSeats: -booking.numberOfSeats } },
-            { session }
-          );
-          booking.status = 'expired';
-          await booking.save({ session });
-          throw new AppError(400, 'Reservation has expired');
-        }
-
-        await Event.findByIdAndUpdate(
-          booking.eventId,
-          {
-            $inc: {
-              reservedSeats: -booking.numberOfSeats,
-              bookedSeats: booking.numberOfSeats,
-            },
-          },
-          { session }
-        );
-
-        booking.type = 'booking';
-        booking.status = 'confirmed';
-        booking.paymentIntentId = paymentIntentId;
-        booking.paidAt = new Date();
-        booking.expiresAt = undefined;
-        confirmedBooking = await booking.save({ session });
-      });
-
-      if (!confirmedBooking) {
-        throw new AppError(400, 'Failed to confirm booking');
-      }
-
-      return confirmedBooking;
-    } finally {
-      await session.endSession();
+    if (booking.status === 'confirmed') {
+      throw new AppError(400, 'Booking is already confirmed');
     }
+    if (booking.status === 'cancelled' || booking.status === 'expired') {
+      throw new AppError(400, `Cannot confirm a ${booking.status} booking`);
+    }
+    if (booking.type !== 'reservation') {
+      throw new AppError(400, 'Only pending reservations can be confirmed');
+    }
+    if (booking.expiresAt && booking.expiresAt <= new Date()) {
+      await Event.findByIdAndUpdate(booking.eventId, {
+        $inc: { reservedSeats: -booking.numberOfSeats },
+      });
+      booking.status = 'expired';
+      await booking.save();
+      throw new AppError(400, 'Reservation has expired');
+    }
+
+    await Event.findByIdAndUpdate(booking.eventId, {
+      $inc: {
+        reservedSeats: -booking.numberOfSeats,
+        bookedSeats: booking.numberOfSeats,
+      },
+    });
+
+    booking.type = 'booking';
+    booking.status = 'confirmed';
+    booking.paymentIntentId = paymentIntentId;
+    booking.paidAt = new Date();
+    booking.expiresAt = undefined;
+    await booking.save();
+
+    return booking;
   }
 
   async cancelBooking(bookingId: string, userId: string): Promise<IBooking> {
-    const session = await mongoose.startSession();
-    let cancelledBooking: IBooking | null = null;
+    const booking = await Booking.findById(bookingId);
+    if (!booking) throw new AppError(404, 'Booking not found');
 
-    try {
-      await session.withTransaction(async () => {
-        const booking = await Booking.findById(bookingId).session(session);
-        if (!booking) throw new AppError(404, 'Booking not found');
-
-        if (booking.userId.toString() !== userId) {
-          throw new AppError(403, 'You are not authorized to cancel this booking');
-        }
-        if (booking.status === 'cancelled') {
-          throw new AppError(400, 'Booking is already cancelled');
-        }
-        if (booking.status === 'expired') {
-          throw new AppError(400, 'Cannot cancel an expired booking');
-        }
-        if (booking.status === 'expiring') {
-          throw new AppError(400, 'Reservation is already expiring');
-        }
-
-        if (booking.type === 'booking' || booking.status === 'confirmed') {
-          const event = await Event.findById(booking.eventId).session(session);
-          if (!event) throw new AppError(404, 'Event not found');
-
-          if (event.status === 'completed') {
-            throw new AppError(400, 'Cannot cancel a booking for a completed event');
-          }
-          if (event.status === 'cancelled') {
-            throw new AppError(400, 'Cannot cancel a booking for a cancelled event');
-          }
-          if (event.date <= new Date()) {
-            throw new AppError(400, 'Cannot cancel a booking after the event date has passed');
-          }
-        }
-
-        const seatField = booking.type === 'reservation' ? 'reservedSeats' : 'bookedSeats';
-        await Event.findByIdAndUpdate(
-          booking.eventId,
-          { $inc: { [seatField]: -booking.numberOfSeats } },
-          { session }
-        );
-
-        booking.status = 'cancelled';
-        cancelledBooking = await booking.save({ session });
-      });
-
-      if (!cancelledBooking) {
-        throw new AppError(400, 'Failed to cancel booking');
-      }
-
-      return cancelledBooking;
-    } finally {
-      await session.endSession();
+    if (booking.userId.toString() !== userId) {
+      throw new AppError(403, 'You are not authorized to cancel this booking');
     }
+
+    if (booking.status === 'cancelled') {
+      throw new AppError(400, 'Booking is already cancelled');
+    }
+    if (booking.status === 'expired') {
+      throw new AppError(400, 'Cannot cancel an expired booking');
+    }
+    const seatField = booking.type === 'reservation' ? 'reservedSeats' : 'bookedSeats';
+    await Event.findByIdAndUpdate(booking.eventId, {
+      $inc: { [seatField]: -booking.numberOfSeats },
+    });
+
+    booking.status = 'cancelled';
+    await booking.save();
+
+    return booking;
   }
 
   async expireReservation(bookingId: string): Promise<IBooking> {
-    const session = await mongoose.startSession();
-    let expiredBooking: IBooking | null = null;
+    const booking = await Booking.findById(bookingId);
+    if (!booking) throw new AppError(404, 'Booking not found');
 
-    try {
-      await session.withTransaction(async () => {
-        const booking = await Booking.findById(bookingId).session(session);
-        if (!booking) throw new AppError(404, 'Booking not found');
-
-        if (booking.type !== 'reservation') {
-          throw new AppError(400, 'Only reservations can be expired');
-        }
-        if (booking.status !== 'pending') {
-          throw new AppError(400, `Cannot expire a ${booking.status} booking`);
-        }
-
-        await Event.findByIdAndUpdate(
-          booking.eventId,
-          { $inc: { reservedSeats: -booking.numberOfSeats } },
-          { session }
-        );
-
-        booking.status = 'expired';
-        expiredBooking = await booking.save({ session });
-      });
-
-      if (!expiredBooking) {
-        throw new AppError(400, 'Failed to expire reservation');
-      }
-
-      return expiredBooking;
-    } finally {
-      await session.endSession();
+    if (booking.type !== 'reservation') {
+      throw new AppError(400, 'Only reservations can be expired');
     }
+    if (booking.status !== 'pending') {
+      throw new AppError(400, `Cannot expire a ${booking.status} booking`);
+    }
+
+    await Event.findByIdAndUpdate(booking.eventId, {
+      $inc: { reservedSeats: -booking.numberOfSeats },
+    });
+
+    booking.status = 'expired';
+    await booking.save();
+
+    return booking;
   }
 
   async expireStaleReservations(): Promise<number> {
-    const batchId = new Types.ObjectId().toHexString();
-    const claimResult = await Booking.updateMany(
-      {
-        type: 'reservation',
-        status: 'pending',
-        expiresAt: { $lte: new Date() },
-      },
-      {
-        $set: {
-          status: 'expiring',
-          expirationBatchId: batchId,
-        },
-      }
-    );
+    const stale = await Booking.find({
+      type: 'reservation',
+      status: 'pending',
+      expiresAt: { $lte: new Date() },
+    });
 
-    if (claimResult.modifiedCount === 0) {
-      return 0;
-    }
-
-    const claimedReservations = await Booking.find({
-      status: 'expiring',
-      expirationBatchId: batchId,
-    })
-      .select('eventId numberOfSeats')
-      .lean();
-
-    const seatsByEvent = new Map<string, number>();
-    for (const reservation of claimedReservations) {
-      const eventId = reservation.eventId.toString();
-      seatsByEvent.set(eventId, (seatsByEvent.get(eventId) || 0) + reservation.numberOfSeats);
-    }
-
-    const session = await mongoose.startSession();
-
-    try {
-      await session.withTransaction(async () => {
-        if (seatsByEvent.size > 0) {
-          await Event.bulkWrite(
-            Array.from(seatsByEvent.entries()).map(([eventId, seats]) => ({
-              updateOne: {
-                filter: { _id: new Types.ObjectId(eventId) },
-                update: { $inc: { reservedSeats: -seats } },
-              },
-            })),
-            { session }
-          );
-        }
-
-        await Booking.updateMany(
-          {
-            status: 'expiring',
-            expirationBatchId: batchId,
-          },
-          {
-            $set: { status: 'expired' },
-            $unset: { expirationBatchId: '' },
-          },
-          { session }
-        );
+    let count = 0;
+    for (const booking of stale) {
+      await Event.findByIdAndUpdate(booking.eventId, {
+        $inc: { reservedSeats: -booking.numberOfSeats },
       });
-
-      return claimedReservations.length;
-    } finally {
-      await session.endSession();
+      booking.status = 'expired';
+      await booking.save();
+      count++;
     }
+
+    return count;
   }
 
   async getBookingById(bookingId: string): Promise<IBooking | null> {
@@ -351,6 +238,49 @@ export class BookingService {
     });
   }
 
+  async enforceEventCreationQuota(userId: string): Promise<void> {
+    const subscription = await Subscription.findOne({ userId: new Types.ObjectId(userId) });
+    if (!subscription) throw new AppError(403, 'No active subscription found');
+
+    let maxEvents: number;
+    let periodStart: Date;
+
+    if (subscription.plan === 'free') {
+      const freePlan = await Plan.findOne({ name: { $regex: /^free$/i } });
+      maxEvents = freePlan?.maxEvents ?? 0;
+      periodStart = new Date(0);
+    } else {
+      if (!subscription.planId) throw new AppError(403, 'Subscription plan reference missing');
+      const plan = await Plan.findById(subscription.planId);
+      if (!plan) throw new AppError(404, 'Subscription plan not found');
+      maxEvents = plan.maxEvents;
+
+      // The plan limit is measured against the current billing period.
+      const periodEnd = (subscription as any).currentPeriodEnd as Date;
+      if (!periodEnd) throw new AppError(400, 'Subscription period information missing');
+
+      periodStart = new Date(periodEnd);
+      const billingCycle = (subscription as any).billingCycle as string;
+      if (billingCycle === 'yearly') {
+        periodStart.setFullYear(periodStart.getFullYear() - 1);
+      } else {
+        periodStart.setMonth(periodStart.getMonth() - 1);
+      }
+    }
+
+    const eventsCreated = await Event.countDocuments({
+      creatorId: new Types.ObjectId(userId),
+      status: 'published',
+      createdAt: { $gte: periodStart },
+    });
+
+    if (eventsCreated >= maxEvents) {
+      throw new AppError(
+        403,
+        `You have reached your plan's limit of ${maxEvents} event${maxEvents === 1 ? '' : 's'} per billing period. Upgrade your plan to create more events.`
+      );
+    }
+  }
 }
 
 export default new BookingService();

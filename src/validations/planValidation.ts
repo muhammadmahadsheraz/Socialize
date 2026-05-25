@@ -1,7 +1,6 @@
 import Joi from 'joi';
 
 export const createPlanSchema = Joi.object({
-  // UI fields — named exactly as the frontend uses them
   name: Joi.string().required().trim().messages({
     'string.empty': 'Plan name is required',
     'any.required': 'Plan name is required',
@@ -41,8 +40,6 @@ export const createPlanSchema = Joi.object({
     'boolean.base': 'isPopular must be a boolean',
     'any.required': 'isPopular is required',
   }),
-
-  // Optional internal field
   currency: Joi.string().optional().default('usd').uppercase(),
   trialDays: Joi.number().integer().min(0).optional().default(7),
 });

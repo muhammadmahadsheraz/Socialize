@@ -8,11 +8,6 @@ const router = Router();
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-/**
- * POST /api/auth/google/verify
- * Verify Google ID token and sign in / sign up user
- * Frontend sends the ID token from Google Sign-In
- */
 router.post('/google/verify', async (req: Request, res: Response): Promise<void> => {
   try {
     const { idToken } = req.body;
@@ -22,7 +17,6 @@ router.post('/google/verify', async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Verify the token with Google
     const ticket = await googleClient.verifyIdToken({
       idToken,
       audience: process.env.GOOGLE_CLIENT_ID,
@@ -44,27 +38,23 @@ router.post('/google/verify', async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if user already exists
     let user = await userService.getUserByEmail(email);
     let isNewUser = false;
 
     if (!user) {
-      // New user — create account with Google data
       isNewUser = true;
       const randomPassword = Math.random().toString(36).slice(-12) + 'Aa1!';
       user = await userService.createUser({
         fullname,
         email,
-        phoneNumber: '+00000000000', // placeholder
+        phoneNumber: '+00000000000',
         password: randomPassword,
         profilePic: profilePic || undefined,
       });
 
-      // Auto-create free subscription
       await subscriptionService.createFreeSubscription(user._id.toString());
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       { id: user._id.toString() },
       process.env.JWT_SECRET as string,

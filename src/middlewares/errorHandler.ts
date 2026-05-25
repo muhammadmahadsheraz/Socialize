@@ -24,7 +24,6 @@ export const errorHandler = (
     return;
   }
 
-  // Handle Mongoose duplicate key error
   if ((err as any).code === 11000) {
     const field = Object.keys((err as any).keyPattern)[0];
     res.status(400).json({
@@ -34,7 +33,6 @@ export const errorHandler = (
     return;
   }
 
-  // Handle Mongoose validation error
   if ((err as any).name === 'ValidationError') {
     const messages = Object.values((err as any).errors).map(
       (error: any) => error.message

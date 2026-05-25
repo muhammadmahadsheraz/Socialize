@@ -10,13 +10,8 @@ import {
 
 const router = Router();
 
-// All event routes require authentication
 router.use(protect);
 
-/**
- * POST /events
- * Create a new event
- */
 router.post('/', validateRequest(createEventSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const creatorId = (req as any).user?.id;
@@ -39,10 +34,6 @@ router.post('/', validateRequest(createEventSchema), async (req: Request, res: R
   }
 });
 
-/**
- * GET /events/:id
- * Get event by ID
- */
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const event = await eventService.getEventById(req.params.id);
@@ -60,10 +51,6 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-/**
- * GET /events
- * Get all events with filters
- */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const filters = {
@@ -90,10 +77,6 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /events/creator/:creatorId
- * Get events by creator
- */
 router.get('/creator/:creatorId', async (req: Request, res: Response) => {
   try {
     const filters = {
@@ -119,10 +102,6 @@ router.get('/creator/:creatorId', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * PUT /events/:id
- * Update event
- */
 router.put('/:id', validateRequest(updateEventSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const event = await eventService.updateEvent(req.params.id, req.user!.id, req.body);
@@ -143,10 +122,6 @@ router.put('/:id', validateRequest(updateEventSchema), async (req: Request, res:
   }
 });
 
-/**
- * POST /events/:id/cancel
- * Cancel event
- */
 router.post('/:id/cancel', async (req: Request, res: Response): Promise<void> => {
   try {
     const event = await eventService.cancelEvent(req.params.id, req.user!.id);
@@ -167,10 +142,6 @@ router.post('/:id/cancel', async (req: Request, res: Response): Promise<void> =>
   }
 });
 
-/**
- * POST /events/:id/complete
- * Complete event
- */
 router.post('/:id/complete', async (req: Request, res: Response): Promise<void> => {
   try {
     const event = await eventService.completeEvent(req.params.id, req.user!.id);
@@ -191,10 +162,6 @@ router.post('/:id/complete', async (req: Request, res: Response): Promise<void> 
   }
 });
 
-/**
- * POST /events/:id/participants
- * Add participant to event
- */
 router.post(
   '/:id/participants',
   validateRequest(addParticipantSchema),
@@ -219,10 +186,6 @@ router.post(
   }
 );
 
-/**
- * DELETE /events/:id/participants/:participantId
- * Remove participant from event by participant ID
- */
 router.delete('/:id/participants/:participantId', async (req: Request, res: Response): Promise<void> => {
   try {
     const event = await eventService.removeParticipant(req.params.id, req.user!.id, req.params.participantId);
@@ -243,10 +206,6 @@ router.delete('/:id/participants/:participantId', async (req: Request, res: Resp
   }
 });
 
-/**
- * PUT /events/:id/participants/:participantId
- * Update participant by participant ID
- */
 router.put(
   '/:id/participants/:participantId',
   validateRequest(addParticipantSchema),
@@ -276,12 +235,6 @@ router.put(
   }
 );
 
-
-
-/**
- * GET /events/:id/available-seats
- * Get available seats for event
- */
 router.get('/:id/available-seats', async (req: Request, res: Response) => {
   try {
     const availableSeats = await eventService.getAvailableSeats(req.params.id);
@@ -296,10 +249,6 @@ router.get('/:id/available-seats', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * DELETE /events/:id
- * Delete event
- */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     await eventService.deleteEvent(req.params.id, req.user!.id);
@@ -314,10 +263,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /events/search/:term
- * Search events
- */
 router.get('/search/:term', async (req: Request, res: Response) => {
   try {
     const filters = {
@@ -341,11 +286,7 @@ router.get('/search/:term', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /events/:id/check-attendance
- * Check if the authenticated user can attend the event.
- * Reads isVerified directly from the JWT — no body needed.
- */
+// Attendance eligibility relies on the verification flag stored in the JWT.
 router.get('/:id/check-attendance', async (req: Request, res: Response): Promise<void> => {
   try {
     const userIsVerified = req.user!.isVerified;

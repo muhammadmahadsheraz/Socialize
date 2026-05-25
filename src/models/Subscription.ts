@@ -1,6 +1,5 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
-// Base subscription interface
 export interface ISubscriptionBase extends Document {
   userId: Types.ObjectId;
   planId?: Types.ObjectId;  
@@ -15,14 +14,12 @@ export interface ISubscriptionBase extends Document {
   updatedAt: Date;
 }
 
-// Free plan subscription
 export interface IFreeSubscription extends ISubscriptionBase {
   plan: 'free';
   status: 'trialing';
   planId: undefined;
 }
 
-// Paid plan subscription (any named plan)
 export interface IProSubscription extends ISubscriptionBase {
   plan: string;             
   planId: Types.ObjectId;
@@ -34,7 +31,6 @@ export interface IProSubscription extends ISubscriptionBase {
   currentPeriodEnd: Date;
 }
 
-// Union type for subscription
 export type ISubscription = IFreeSubscription | IProSubscription;
 
 const subscriptionSchema = new Schema<any>(
@@ -112,7 +108,6 @@ const subscriptionSchema = new Schema<any>(
   }
 );
 
-// Middleware to enforce free plan constraints
 subscriptionSchema.pre('save', function (next) {
   const doc = this as ISubscriptionBase;
 
@@ -125,7 +120,6 @@ subscriptionSchema.pre('save', function (next) {
     doc.providerCustomerId = undefined;
     doc.currentPeriodEnd = undefined;
   } else {
-    // Paid plan — require key fields
     if (!doc.billingCycle || !doc.provider) {
       return next(new Error('Paid plans require billingCycle and provider fields'));
     }
@@ -137,7 +131,6 @@ subscriptionSchema.pre('save', function (next) {
   next();
 });
 
-// Indexes
 subscriptionSchema.index({ userId: 1 });
 subscriptionSchema.index({ planId: 1 });
 subscriptionSchema.index({ plan: 1 });

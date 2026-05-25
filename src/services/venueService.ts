@@ -2,9 +2,6 @@ import { Types } from 'mongoose';
 import { Venue, IVenue, IBusinessHours } from '../models/Venue';
 
 export class VenueService {
-  /**
-   * Create a new venue
-   */
   async createVenue(
     ownerId: string,
     venueData: {
@@ -27,7 +24,6 @@ export class VenueService {
     }
   ): Promise<IVenue> {
     try {
-      // Convert coordinates from { longitude, latitude } to GeoJSON format
       const geoJSONCoordinates = {
         type: 'Point' as const,
         coordinates: [venueData.location.coordinates.longitude, venueData.location.coordinates.latitude],
@@ -61,9 +57,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Get venue by ID
-   */
   async getVenueById(venueId: string): Promise<IVenue | null> {
     try {
       return await Venue.findById(venueId).populate('ownerId', 'fullname email profilePic');
@@ -72,9 +65,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Get all venues with filters
-   */
   async getAllVenues(filters: {
     category?: string;
     status?: string;
@@ -107,9 +97,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Get venues by owner
-   */
   async getVenuesByOwner(
     ownerId: string,
     filters?: { status?: string; page?: number; limit?: number }
@@ -135,12 +122,8 @@ export class VenueService {
     }
   }
 
-  /**
-   * Update venue
-   */
   async updateVenue(venueId: string, updateData: Partial<IVenue>): Promise<IVenue | null> {
     try {
-      // If coordinates are being updated, convert to GeoJSON format
       if (updateData.location?.coordinates) {
         const coords = updateData.location.coordinates as any;
         if (coords.longitude !== undefined && coords.latitude !== undefined) {
@@ -162,9 +145,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Activate venue
-   */
   async activateVenue(venueId: string): Promise<IVenue | null> {
     try {
       const venue = await Venue.findById(venueId);
@@ -182,9 +162,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Deactivate venue
-   */
   async deactivateVenue(venueId: string): Promise<IVenue | null> {
     try {
       const venue = await Venue.findById(venueId);
@@ -202,13 +179,10 @@ export class VenueService {
     }
   }
 
-  /**
-   * Find venues near a location
-   */
   async findVenuesNearby(
     longitude: number,
     latitude: number,
-    maxDistance: number = 5000 // in meters, default 5km
+    maxDistance: number = 5000
   ): Promise<IVenue[]> {
     try {
       const venues = await Venue.find({
@@ -232,9 +206,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Search venues by name or description
-   */
   async searchVenues(
     searchTerm: string,
     filters?: { category?: string; status?: string; page?: number; limit?: number }
@@ -265,9 +236,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Check if venue is open at a specific time
-   */
   async isVenueOpenAt(venueId: string, day: string, time: string): Promise<boolean> {
     try {
       const venue = await Venue.findById(venueId);
@@ -292,9 +260,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Get venue business hours
-   */
   async getVenueBusinessHours(venueId: string): Promise<IBusinessHours[]> {
     try {
       const venue = await Venue.findById(venueId);
@@ -309,9 +274,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Update venue business hours
-   */
   async updateBusinessHours(venueId: string, businessHours: IBusinessHours[]): Promise<IVenue | null> {
     try {
       const venue = await Venue.findById(venueId);
@@ -329,9 +291,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Delete venue
-   */
   async deleteVenue(venueId: string): Promise<void> {
     try {
       const venue = await Venue.findById(venueId);
@@ -350,9 +309,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Get venue amenities
-   */
   async getVenueAmenities(venueId: string): Promise<string[]> {
     try {
       const venue = await Venue.findById(venueId);
@@ -367,9 +323,6 @@ export class VenueService {
     }
   }
 
-  /**
-   * Update venue amenities
-   */
   async updateAmenities(venueId: string, amenities: string[]): Promise<IVenue | null> {
     try {
       const venue = await Venue.findById(venueId);

@@ -936,3 +936,225 @@ Content-Type: application/json
   "message": "No email found in Google token"
 }
 ```
+
+## 8. ID Card Verification (Mock Endpoint for Testing)
+**`POST /api/verification`**
+
+*Note: The Google Vision OCR layer has been temporarily removed to avoid billing issues. This endpoint now accepts a simulated OCR text payload directly in the JSON body.*
+
+**Headers:**
+```json
+Content-Type: application/json
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:**
+| Field      | Type   | Required | Description |
+|------------|--------|----------|-------------|
+| userId     | string | Yes      | MongoDB ObjectId of the user to verify |
+| rawOcrText | string | Yes      | The raw text you want the Risk Engine to evaluate (simulating an OCR read) |
+
+### Test Cases for Postman
+
+**Test Case 1: Valid Latvian ID (Should be Approved)**
+```json
+{
+  "userId": "<user_id>",
+  "rawOcrText": "REPUBLIC OF LATVIA\nPERSONAL CARD\nJĀNIS BĒRZIŅŠ\nDOB: 15/05/1990\nID Number: 150590-12345"
+}
+```
+*Note: Ensure the name in `rawOcrText` is somewhat similar to the user's `fullname` in the database, otherwise it will fail the fuzzy name match.*
+
+**Test Case 2: Valid Pakistani CNIC (Should be Approved)**
+```json
+{
+  "userId": "<user_id>",
+  "rawOcrText": "ISLAMIC REPUBLIC OF PAKISTAN\nName: Muhammad Ali\nDOB: 12/08/1985\nCNIC: 35202-1234567-1"
+}
+```
+
+**Test Case 3: Failed Validation - User is too young (Should be Rejected)**
+```json
+{
+  "userId": "<user_id>",
+  "rawOcrText": "USA DRIVER LICENSE\nName: John Doe\nDOB: 10/10/2020\nID: A123456789"
+}
+```
+
+**Test Case 4: Failed Validation - ID format invalid/missing (Should be Rejected)**
+```json
+{
+  "userId": "<user_id>",
+  "rawOcrText": "Some random text on an image\nName: John Doe\nDOB: 01/01/1990\nNo ID number here"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "User successfully verified",
+  "data": {
+    "userId": "507f1f77bcf86cd799439011",
+    "isVerified": true,
+    "verificationRecordId": "607f1f77bcf86cd799439012",
+    "detectedCountry": "PK",
+    "riskScore": 1
+  }
+}
+```
+
+**Error Response - Risk Analysis Failed (400 Bad Request):**
+```json
+{
+    "success": false,
+    "message": "ID Verification failed based on risk analysis.",
+    "violations": [
+        "Name similarity too low (0.00). Expected: Mahad Sheraz, Found best match: john doe",
+        "User is too young (Calculated age: 5)"
+    ],
+    "riskScore": 0.4,
+    "detectedCountry": "US"
+}
+```
+
+## 9. Verification Record Management (Testing Helpers)
+
+### Delete Verification Record
+**`DELETE /api/verification/:recordId`**
+
+**Headers:**
+```json
+Content-Type: application/json
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:**
+| Field   | Type   | Required | Description |
+|---------|--------|----------|-------------|
+| userId  | string | Yes      | MongoDB ObjectId of the user that owns the record |
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Verification record deleted"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request` – missing `userId`.
+- `403 Forbidden` – attempting to delete a record that does not belong to the supplied `userId`.
+- `404 Not Found` – record not found.
+
+### Update Verification Record
+**`PATCH /api/verification/:recordId`**
+
+**Headers:**
+```json
+Content-Type: application/json
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:**
+| Field       | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| userId      | string | Yes      | MongoDB ObjectId of the user that owns the record |
+| rawOcrText  | string | Yes      | New OCR text to re‑evaluate risk |
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Verification record updated",
+  "data": {
+    "verificationRecordId": "<record_id>",
+    "status": "approved|rejected",
+    "riskScore": <score>,
+    "detectedCountry": "<country_code>"
+  }
+}
+```
+
+**Error Responses:**
+- `400 Bad Request` – missing fields.
+- `403 Forbidden` – record does not belong to the supplied `userId`.
+- `404 Not Found` – record or user not found.
+
+These helper endpoints are intended for testing workflows where the same `userId` is reused across multiple verification scenarios. They allow cleanup of old records and re‑evaluation with altered OCR data without creating duplicate entries.
+### Get Verification Records
+**`GET /api/verification`**
+
+**Headers:**
+```json
+Authorization: Bearer <jwt_token>
+```
+
+**Query Parameters (optional):**
+| Param  | Type   | Description |
+|--------|--------|-------------|
+| userId | string | Filter records belonging to this user |
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "recordId": "607f1f77bcf86cd799439012",
+      "userId": "507f1f77bcf86cd799439011",
+      "nationalId": "PK123456789",
+      "fullName": "Mahad Sheraz",
+      "dateOfBirth": "1990-05-15T00:00:00.000Z",
+      "rawOcrText": "...",
+      "riskScore": 1,
+      "violations": [],
+      "status": "approved",
+      "createdAt": "2026-05-20T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Error Responses:**
+- `400 Bad Request` – invalid query parameters.
+
+---
+
+### Get Verification Record by ID
+**`GET /api/verification/:recordId`**
+
+**Headers:**
+```json
+Authorization: Bearer <jwt_token>
+```
+
+**Query Parameters (optional):**
+| Param  | Type   | Description |
+|--------|--------|-------------|
+| userId | string | Ensure the record belongs to this user |
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "recordId": "607f1f77bcf86cd799439012",
+    "userId": "507f1f77bcf86cd799439011",
+    "nationalId": "PK123456789",
+    "fullName": "Mahad Sheraz",
+    "dateOfBirth": "1990-05-15T00:00:00.000Z",
+    "rawOcrText": "...",
+    "riskScore": 1,
+    "violations": [],
+    "status": "approved",
+    "createdAt": "2026-05-20T12:00:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+- `400 Bad Request` – missing `recordId` or `userId`.
+- `403 Forbidden` – record does not belong to supplied `userId`.
+- `404 Not Found` – record not found.
+

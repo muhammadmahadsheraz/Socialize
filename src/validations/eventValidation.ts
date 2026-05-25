@@ -1,6 +1,5 @@
 import Joi from 'joi';
 
-// Participant validation schema
 const participantSchema = Joi.object({
   participantImage: Joi.string()
     .uri()
@@ -31,7 +30,6 @@ const participantSchema = Joi.object({
     }),
 });
 
-// Create event validation schema
 export const createEventSchema = Joi.object({
   category: Joi.string()
     .trim()
@@ -144,13 +142,11 @@ export const createEventSchema = Joi.object({
       'array.max': 'Cannot have more than 100 participants',
     }),
 }).external(async (value) => {
-  // Validate that endTime is after startTime
   if (value.startTime >= value.endTime) {
     throw new Error('End time must be after start time');
   }
 });
 
-// Update event validation schema
 export const updateEventSchema = Joi.object({
   category: Joi.string()
     .trim()
@@ -197,13 +193,11 @@ export const updateEventSchema = Joi.object({
     .items(participantSchema)
     .max(100),
 }).external(async (value) => {
-  // Only validate time comparison if both are provided
   if (value.startTime && value.endTime && value.startTime >= value.endTime) {
     throw new Error('End time must be after start time');
   }
 });
 
-// Add participant validation schema
 export const addParticipantSchema = Joi.object({
   participantImage: Joi.string()
     .uri()

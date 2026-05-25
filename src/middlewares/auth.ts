@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 
-// Extend Express Request to include user
 declare global {
   namespace Express {
     interface Request {

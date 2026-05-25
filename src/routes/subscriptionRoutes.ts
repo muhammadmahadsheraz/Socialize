@@ -4,13 +4,8 @@ import { protect } from '../middlewares/auth';
 
 const router = Router();
 
-// All subscription routes require authentication
 router.use(protect);
 
-/**
- * GET /api/subscriptions/:userId
- * Get subscription by user ID
- */
 router.get('/:userId', async (req: Request, res: Response): Promise<void> => {
   try {
     const subscription = await subscriptionService.getSubscriptionByUserId(req.params.userId);
@@ -27,10 +22,6 @@ router.get('/:userId', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-/**
- * POST /api/subscriptions/:userId/upgrade
- * Upgrade to pro subscription
- */
 router.post('/:userId/upgrade', async (req: Request, res: Response): Promise<void> => {
   try {
     const subscription = await subscriptionService.upgradeToProSubscription(
@@ -51,10 +42,6 @@ router.post('/:userId/upgrade', async (req: Request, res: Response): Promise<voi
   }
 });
 
-/**
- * POST /api/subscriptions/:userId/downgrade
- * Downgrade to free subscription
- */
 router.post('/:userId/downgrade', async (req: Request, res: Response): Promise<void> => {
   try {
     const subscription = await subscriptionService.downgradeToFreeSubscription(req.params.userId);
@@ -72,10 +59,6 @@ router.post('/:userId/downgrade', async (req: Request, res: Response): Promise<v
   }
 });
 
-/**
- * PATCH /api/subscriptions/:userId/status
- * Update subscription status
- */
 router.patch('/:userId/status', async (req: Request, res: Response): Promise<void> => {
   try {
     const { status } = req.body;

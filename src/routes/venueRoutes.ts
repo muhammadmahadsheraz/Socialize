@@ -6,13 +6,8 @@ import { createVenueSchema, updateVenueSchema } from '../validations/venueValida
 
 const router = Router();
 
-// All venue routes require authentication
 router.use(protect);
 
-/**
- * POST /venues
- * Create a new venue
- */
 router.post('/', validateRequest(createVenueSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const ownerId = (req as any).user?.id;
@@ -35,10 +30,6 @@ router.post('/', validateRequest(createVenueSchema), async (req: Request, res: R
   }
 });
 
-/**
- * GET /venues/:id
- * Get venue by ID
- */
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const venue = await venueService.getVenueById(req.params.id);
@@ -56,10 +47,6 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-/**
- * GET /venues
- * Get all venues with filters
- */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const filters = {
@@ -85,10 +72,6 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /venues/owner/:ownerId
- * Get venues by owner
- */
 router.get('/owner/:ownerId', async (req: Request, res: Response) => {
   try {
     const filters = {
@@ -112,10 +95,6 @@ router.get('/owner/:ownerId', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * PUT /venues/:id
- * Update venue
- */
 router.put('/:id', validateRequest(updateVenueSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const venue = await venueService.updateVenue(req.params.id, req.body);
@@ -136,10 +115,6 @@ router.put('/:id', validateRequest(updateVenueSchema), async (req: Request, res:
   }
 });
 
-/**
- * POST /venues/:id/activate
- * Activate venue
- */
 router.post('/:id/activate', async (req: Request, res: Response): Promise<void> => {
   try {
     const venue = await venueService.activateVenue(req.params.id);
@@ -160,10 +135,6 @@ router.post('/:id/activate', async (req: Request, res: Response): Promise<void> 
   }
 });
 
-/**
- * POST /venues/:id/deactivate
- * Deactivate venue
- */
 router.post('/:id/deactivate', async (req: Request, res: Response): Promise<void> => {
   try {
     const venue = await venueService.deactivateVenue(req.params.id);
@@ -184,10 +155,6 @@ router.post('/:id/deactivate', async (req: Request, res: Response): Promise<void
   }
 });
 
-/**
- * GET /venues/nearby
- * Find venues near a location
- */
 router.get('/nearby', async (req: Request, res: Response): Promise<void> => {
   try {
     const { longitude, latitude, maxDistance } = req.query;
@@ -214,10 +181,6 @@ router.get('/nearby', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-/**
- * GET /venues/search/:term
- * Search venues
- */
 router.get('/search/:term', async (req: Request, res: Response) => {
   try {
     const filters = {
@@ -242,10 +205,6 @@ router.get('/search/:term', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /venues/:id/check-open
- * Check if venue is open at a specific time
- */
 router.post('/:id/check-open', async (req: Request, res: Response): Promise<void> => {
   try {
     const { day, time } = req.body;
@@ -269,10 +228,6 @@ router.post('/:id/check-open', async (req: Request, res: Response): Promise<void
   }
 });
 
-/**
- * GET /venues/:id/business-hours
- * Get venue business hours
- */
 router.get('/:id/business-hours', async (req: Request, res: Response) => {
   try {
     const businessHours = await venueService.getVenueBusinessHours(req.params.id);
@@ -287,10 +242,6 @@ router.get('/:id/business-hours', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * PUT /venues/:id/business-hours
- * Update venue business hours
- */
 router.put('/:id/business-hours', async (req: Request, res: Response): Promise<void> => {
   try {
     const { businessHours } = req.body;
@@ -318,10 +269,6 @@ router.put('/:id/business-hours', async (req: Request, res: Response): Promise<v
   }
 });
 
-/**
- * GET /venues/:id/amenities
- * Get venue amenities
- */
 router.get('/:id/amenities', async (req: Request, res: Response) => {
   try {
     const amenities = await venueService.getVenueAmenities(req.params.id);
@@ -336,10 +283,6 @@ router.get('/:id/amenities', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * PUT /venues/:id/amenities
- * Update venue amenities
- */
 router.put('/:id/amenities', async (req: Request, res: Response): Promise<void> => {
   try {
     const { amenities } = req.body;
@@ -367,10 +310,6 @@ router.put('/:id/amenities', async (req: Request, res: Response): Promise<void> 
   }
 });
 
-/**
- * DELETE /venues/:id
- * Delete venue
- */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     await venueService.deleteVenue(req.params.id);

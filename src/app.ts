@@ -11,34 +11,30 @@ import stripeRoutes from './routes/stripeRoutes';
 import adminRoutes from './routes/adminRoutes';
 import authRoutes from './routes/authRoutes';
 import bookingRoutes from './routes/bookingRoutes';
+import verificationRoutes from './routes/verificationRoutes';
 import bookingService from './services/bookingService';
 
 dotenv.config();
 
 const app: Express = express();
 
-// CORS — allow frontend origin
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
 }));
 
-// Stripe webhook needs raw body — must be registered BEFORE express.json()
+// Stripe webhook signature verification requires the raw body before JSON parsing.
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
 
-// General middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Connect to database
 connectDB();
 
-// Health check
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'OK', message: 'Server is running' });
 });
 
-// Routes
 app.use('/api/users', userRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/events', eventRoutes);
@@ -47,6 +43,7 @@ app.use('/api/stripe', stripeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/verification', verificationRoutes);
 
 if (process.env.ENABLE_RESERVATION_CLEANUP === 'true') {
   setInterval(async () => {
@@ -58,12 +55,10 @@ if (process.env.ENABLE_RESERVATION_CLEANUP === 'true') {
   }, 60 * 1000);
 }
 
-// 404 handler
 app.use((_req: Request, _res: Response) => {
   throw new AppError(404, 'Route not found');
 });
 
-// Error handling middleware (must be last)
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;

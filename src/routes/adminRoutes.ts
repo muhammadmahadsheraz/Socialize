@@ -10,13 +10,8 @@ import {
 
 const router = Router();
 
-// All admin routes require authentication + admin role
 router.use(protect, adminMiddleware);
 
-/**
- * POST /admin/plans
- * Create a new plan
- */
 router.post(
   '/plans',
   validateRequest(createPlanSchema),
@@ -34,10 +29,6 @@ router.post(
   }
 );
 
-/**
- * GET /admin/plans
- * List all plans
- */
 router.get(
   '/plans',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -55,10 +46,6 @@ router.get(
   }
 );
 
-/**
- * GET /admin/plans/:planId
- * Get a specific plan
- */
 router.get(
   '/plans/:planId',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -75,10 +62,6 @@ router.get(
   }
 );
 
-/**
- * PATCH /admin/plans/:planId
- * Update a plan (non-pricing fields only)
- */
 router.patch(
   '/plans/:planId',
   validateRequest(updatePlanSchema),
@@ -96,10 +79,6 @@ router.patch(
   }
 );
 
-/**
- * DELETE /admin/plans/:planId
- * Delete a plan
- */
 router.delete(
   '/plans/:planId',
   async (req: Request, res: Response, next: NextFunction) => {

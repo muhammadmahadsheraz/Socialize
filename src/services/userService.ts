@@ -34,7 +34,6 @@ export class UserService {
     userId: string,
     updateData: Partial<IUser>
   ): Promise<IUser> {
-    // Don't allow password updates through this method
     delete (updateData as any).password;
 
     const user = await User.findByIdAndUpdate(userId, updateData, {
@@ -55,7 +54,6 @@ export class UserService {
       throw new AppError(404, 'User not found');
     }
 
-    // Also delete associated subscription
     await Subscription.deleteOne({ userId });
   }
 

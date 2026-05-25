@@ -43,7 +43,6 @@ export class SubscriptionService {
     const existingSubscription = await Subscription.findOne({ userId });
     if (existingSubscription) throw new AppError(400, 'User already has a subscription');
 
-    // Resolve plan name from Plan document
     const plan = await Plan.findById(proData.planId);
     if (!plan) throw new AppError(404, 'Plan not found');
 
@@ -145,7 +144,7 @@ export class SubscriptionService {
       throw new AppError(400, 'User already has a free subscription');
     }
 
-    // Cancel on Stripe before updating the DB
+    // Cancel Stripe first so the local downgrade does not leave paid billing active.
     const providerSubscriptionId = (subscription as any).providerSubscriptionId;
     if (providerSubscriptionId) {
       try {

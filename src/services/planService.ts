@@ -4,10 +4,6 @@ import { stripeService } from './stripeService';
 import { AppError } from '../middlewares/errorHandler';
 
 export class PlanService {
-  /**
-   * Create a new plan
-   * Accepts UI field names directly
-   */
   async createPlan(planData: {
     name: string;
     price: number;
@@ -21,16 +17,14 @@ export class PlanService {
     trialDays?: number;
     currency?: string;
   }): Promise<IPlan> {
-    // Check if plan with this name already exists
     const existingPlan = await Plan.findOne({ name: planData.name });
     if (existingPlan) {
       throw new AppError(400, 'Plan with this name already exists');
     }
 
-    // Map billingType to Stripe interval
     const stripeInterval = BILLING_TYPE_MAP[planData.billingType];
 
-    // Create in Stripe first
+    // Keep Stripe and MongoDB plan records linked through their product and price IDs.
     const { productId, priceId } = await stripeService.createPlanInStripe({
       name: planData.name,
       amount: planData.price,
@@ -39,7 +33,6 @@ export class PlanService {
       intervalCount: stripeInterval.intervalCount,
     });
 
-    // Create in database using UI field names
     const plan = new Plan({
       name: planData.name,
       price: planData.price,
@@ -60,16 +53,12 @@ export class PlanService {
     return plan;
   }
 
-  /**
-   * Delete a plan
-   */
   async deletePlan(planId: string): Promise<void> {
     const plan = await Plan.findById(planId);
     if (!plan) {
       throw new AppError(404, 'Plan not found');
     }
 
-    // Check if any active subscriptions use this plan
     const activeSubscription = await Subscription.findOne({
       planId: plan._id,
       status: { $in: ['active', 'past_due', 'trialing'] },
@@ -82,16 +71,11 @@ export class PlanService {
       );
     }
 
-    // Delete from Stripe
     await stripeService.deletePlanFromStripe(plan.stripeProductId);
 
-    // Delete from database
     await Plan.findByIdAndDelete(planId);
   }
 
-  /**
-   * Get a plan by ID
-   */
   async getPlan(planId: string): Promise<IPlan> {
     const plan = await Plan.findById(planId);
     if (!plan) {
@@ -100,9 +84,6 @@ export class PlanService {
     return plan;
   }
 
-  /**
-   * Get a plan by name
-   */
   async getPlanByName(name: string): Promise<IPlan> {
     const plan = await Plan.findOne({ name });
     if (!plan) {
@@ -111,18 +92,11 @@ export class PlanService {
     return plan;
   }
 
-  /**
-   * List plans
-   * status: true = active, false = inactive
-   */
   async listPlans(includeInactive: boolean = false): Promise<IPlan[]> {
     const query = includeInactive ? {} : { status: true };
     return await Plan.find(query).sort({ createdAt: -1 });
   }
 
-  /**
-   * Update plan — only non-pricing fields can be updated
-   */
   async updatePlan(
     planId: string,
     updateData: {
@@ -147,9 +121,6 @@ export class PlanService {
     return plan;
   }
 
-  /**
-   * Get Stripe price ID for a plan
-   */
   async getPriceId(planId: string): Promise<string> {
     const plan = await this.getPlan(planId);
 
@@ -160,9 +131,6 @@ export class PlanService {
     return plan.stripePriceId;
   }
 
-  /**
-   * Format plan response — uses UI field names
-   */
   formatPlanResponse(plan: IPlan) {
     return {
       id: plan._id.toString(),

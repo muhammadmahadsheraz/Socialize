@@ -8,15 +8,15 @@ export interface ILocation {
   postalCode: string;
   coordinates: {
     type: 'Point';
-    coordinates: [number, number]; // [longitude, latitude]
+    coordinates: [number, number];
   };
 }
 
 export interface IBusinessHours {
   day: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
   isOpen: boolean;
-  openTime?: string; // HH:mm format
-  closeTime?: string; // HH:mm format
+  openTime?: string;
+  closeTime?: string;
 }
 
 export interface IVenue extends Document {
@@ -199,7 +199,6 @@ const venueSchema = new Schema<IVenue>(
       required: [true, 'Business hours are required'],
       validate: {
         validator: function (value: IBusinessHours[]) {
-          // Check if all 7 days are present
           const days = value.map((bh) => bh.day);
           const requiredDays: Array<'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday'> = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
           return requiredDays.every((day) => days.includes(day));
@@ -221,7 +220,6 @@ const venueSchema = new Schema<IVenue>(
   }
 );
 
-// Validate that closeTime is after openTime
 venueSchema.pre('save', function (next) {
   const businessHours = this.businessHours;
 
@@ -236,10 +234,9 @@ venueSchema.pre('save', function (next) {
   next();
 });
 
-// Create geospatial index for location-based queries
+// Supports nearby venue lookups with MongoDB geospatial queries.
 venueSchema.index({ 'location.coordinates': '2dsphere' });
 
-// Indexes for common queries
 venueSchema.index({ ownerId: 1 });
 venueSchema.index({ category: 1 });
 venueSchema.index({ status: 1 });
